@@ -1,118 +1,122 @@
-<p align="center">
-  <img src="frontend/src/assets/logo.webp" alt="Omnicloud Logo" width="192">
-</p>
+<div align="center">
 
-# OmniCloud
+<a href="#">
+  <img src="frontend/src/assets/readme-hero.svg" alt="OpenCloud — All your drives. One workspace." width="100%">
+</a>
 
-[![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)](https://developer.mozilla.org/en-US/docs/Web/JavaScript) [![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/) [![Vue.js](https://img.shields.io/badge/Vue.js-4FC08D?style=for-the-badge&logo=vuedotjs&logoColor=white)](https://vuejs.org/) [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/) [![Node.js](https://img.shields.io/badge/Node.js-5FA04E?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/) [![Express.js](https://img.shields.io/badge/Express.js-000000?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com/) [![SQLite](https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](https://www.sqlite.org/) [![WebSocket](https://img.shields.io/badge/WebSocket-010101?style=for-the-badge&logo=socketdotio&logoColor=white)](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API)
+# ☁️ OpenCloud
 
-OmniCloud is a full-stack cloud drive aggregation platform that presents multiple storage providers through a single, consistent workspace. The application combines a Vue-based client with an Express API and provider adapter layer, enabling users to browse, upload, download, and manage files across connected cloud accounts from one interface.
+**Aggregate every cloud drive you own into one fast, unified workspace.**
 
-![OmniCloud Overview](frontend/src/assets/overview.webp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/sk143sathyabusiness/opencloud?style=for-the-badge&logo=github&logoColor=white)](https://github.com/sk143sathyabusiness/opencloud/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/sk143sathyabusiness/opencloud?style=for-the-badge&logo=github&logoColor=white)](https://github.com/sk143sathyabusiness/opencloud/network)
+[![Last commit](https://img.shields.io/github/last-commit/sk143sathyabusiness/opencloud?style=for-the-badge&logo=git&logoColor=white)](https://github.com/sk143sathyabusiness/opencloud/commits/main)
 
-## ✨ Key features
+[![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
+[![Vue.js](https://img.shields.io/badge/Vue.js-4FC08D?style=for-the-badge&logo=vuedotjs&logoColor=white)](https://vuejs.org/)
+[![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Pinia](https://img.shields.io/badge/Pinia-FFD859?style=for-the-badge&logo=pinia&logoColor=black)](https://pinia.vuejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-5FA04E?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Express.js](https://img.shields.io/badge/Express.js-000000?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com/)
+[![SQLite](https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](https://www.sqlite.org/)
+[![better-sqlite3](https://img.shields.io/badge/better--sqlite3-3B7DD8?style=for-the-badge&logo=sqlite&logoColor=white)](https://github.com/WiseLibs/better-sqlite3)
+[![WebSocket](https://img.shields.io/badge/WebSocket-010101?style=for-the-badge&logo=socketdotio&logoColor=white)](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API)
 
-### ☁️ Multi-provider cloud aggregation
-- Connect multiple cloud storage accounts in one application
-- All providers are normalized through a consistent adapter layer
-- Active provider support includes OAuth, account-based login, and access-key-based connections
+</div>
+
+OpenCloud is a full‑stack **cloud drive aggregation platform**. It connects your Google Drive, OneDrive, Dropbox, MEGA, pCloud, Yandex Disk and S3‑compatible storage accounts and presents them through a single, consistent workspace — browse, search, upload, download and manage files across **all providers from one interface**.
+
+Each provider is normalized behind an **adapter layer**, so every account feels identical: same file explorer, same metadata, same upload pipeline. A **SQLite metadata mirror** makes navigation and search lightning fast — no slow provider API round‑trips while you browse.
+
+![OpenCloud Overview](frontend/src/assets/overview.webp)
+
+---
+
+## ✨ Key Features
+
+### ☁️ Multi-provider aggregation
+- Connect **multiple accounts per provider** or many providers at once
+- Uniform adapter layer normalizes every API into one data model
+- OAuth, email/password and access‑key based connections, each handled natively
+
+### 🔍 Global file search
+- 🔎 Search **across every connected drive** from a single box
+- ⏱️ Debounced, real-time results as you type
+- 🧠 Multi-token & field matching — searches **file name, type, path, provider and account email**
+- 🎛️ Optional filters: `provider`, `folder/file` type, and specific account
+- 📁 Results keep the folder/file filters, star actions and previews you already know
 
 ### 🗂️ Unified file workspace
-- `Home`, `My Drive`, `Recent`, `Starred`, `Shared with Me`, and `Quota` views
-- Virtual-path-based file navigation across providers
-- File metadata is presented consistently across different provider sources
+- Views for `Home`, `My Drive`, `Recent`, `Starred`, `Shared with Me` and `Quota`
+- Virtual-path navigation that spans providers seamlessly
+- Consistent metadata, icons and context actions across all sources
 
 ### 📁 File management
-- Browse files and folders from connected accounts
-- Create folders
-- Rename files and folders
-- Delete files and folders, including bulk delete
-- Download provider files
-- View file details and previews for supported file types
+- Create, rename, delete (incl. bulk delete), download and move files & folders
+- File details + inline preview for supported types
 - Star / unstar files on providers that support it
+- Type, owner and date filters in every view
 
-### ⬆️ Upload system
-- Browser-based file uploads
-- Folder upload support
-- Drag-and-drop uploads
-- Upload session initiation through the API
-- Real-time upload progress over WebSocket
-- Automatic upload account allocation based on storage selection strategy
+### ⬆️ Upload pipeline
+- Drag-and-drop, file & folder uploads straight to the target cloud
+- Chunked streaming through a Node.js proxy with **real-time WebSocket progress**
+- Automatic target-account picker using your **storage allocation strategy**
 
-### 🔄 Sync and metadata mirror
-- File metadata is stored in SQLite for fast navigation
-- Account synchronization runs on a schedule using `node-cron`
-- The API exposes a manual sync trigger
-- Delta sync reports are available through the health/sync layer
+### 🔄 Sync & metadata mirror
+- Scheduled background sync (`node-cron`) keeps local SQLite metadata fresh
+- Manual sync trigger + delta sync reports through the health/sync layer
 
-### 👤 Auth and app modes
-- `local` mode for personal or simple self-hosted usage
-- `hosted` mode for multi-user deployments with session-cookie-based register/login/logout
-- Account data, file mirrors, allocation config, and settings are scoped per user
+### 👤 Modes & personlisation
+- `local` mode — personal / self-hosted single-user
+- `hosted` mode — multi-user with cookie-based register/login/logout
+- User-scoped accounts, file mirrors, allocation config and settings
+- 🌐 **English & Indonesian (Bahasa Indonesia)** UI + light/dark themes
 
-### ⚙️ User settings and storage allocation
-- User settings such as language and theme
-- Storage allocation strategies:
-  - `round_robin`
-  - `weighted_round_robin`
-  - `least_used`
-  - `most_free`
-  - `manual`
-- Account priority order can be configured for the manual strategy
+### ⚖️ Storage allocation strategies
+`round_robin` · `weighted_round_robin` · `least_used` · `most_free` · `manual`
 
-## Preview
+Spread uploads evenly, prefer the emptiest drive, or enforce your own account order.
 
-![OmniCloud My Drive Page](frontend/src/assets/screenshot-1.webp)
-![OmniCloud Storage Overview](frontend/src/assets/screenshot-2.webp)
-![OmniCloud Storage Allocation](frontend/src/assets/screenshot-3.webp)
+---
 
-## ☁️ Supported providers
+## ☁️ Supported Providers
 
-| Provider | Status | Integration model |
-| --- | --- | --- |
-| Google Drive | Active | OAuth + Google Drive API |
-| OneDrive | Active | OAuth + Microsoft Graph |
-| Dropbox | Active | OAuth + Dropbox API |
-| Yandex Disk | Active | OAuth + Yandex Disk API |
-| MEGA | Active | Email/password account connection |
-| pCloud | Active | Email/password account connection |
-| S3-compatible storage | Active | Access key / secret key / endpoint based |
+<p align="center">
+  <img src="frontend/src/assets/google-drive.svg" width="52" alt="Google Drive" title="Google Drive">
+  <img src="frontend/src/assets/microsoft-onedrive.svg" width="52" alt="Microsoft OneDrive" title="Microsoft OneDrive">
+  <img src="frontend/src/assets/dropbox.svg" width="52" alt="Dropbox" title="Dropbox">
+  <img src="frontend/src/assets/mega.svg" width="52" alt="MEGA" title="MEGA">
+  <img src="frontend/src/assets/pcloud.svg" width="52" alt="pCloud" title="pCloud">
+  <img src="frontend/src/assets/yandex-disk.svg" width="52" alt="Yandex Disk" title="Yandex Disk">
+  <img src="frontend/src/assets/s3-storage.svg" width="52" alt="S3-compatible storage" title="S3-compatible storage">
+</p>
 
-> Detailed provider credential setup is available in [`docs/provider-setup.md`](docs/provider-setup.md).
+| Provider            | Status | Integration model                                |
+| ------------------- | ------ | ------------------------------------------------ |
+| **Google Drive**    | ✅ Active | OAuth 2.0 + Google Drive API                    |
+| **Microsoft OneDrive** | ✅ Active | OAuth 2.0 + Microsoft Graph                     |
+| **Dropbox**         | ✅ Active | OAuth 2.0 + Dropbox API                          |
+| **Yandex Disk**     | ✅ Active | OAuth 2.0 + Yandex Disk API                      |
+| **MEGA**            | ✅ Active | Email / password account connection              |
+| **pCloud**          | ✅ Active | Email / password account connection              |
+| **S3-compatible**   | ✅ Active | Access key / secret key / endpoint configuration |
 
-## 🏗️ Project structure
+> Detailed credential setup for every provider lives in [`docs/provider-setup.md`](docs/provider-setup.md).
 
-```text
-OmniCloud/
-├─ frontend/         # Vue 3 app (Vite, Pinia, Vue Router, i18n)
-├─ backend/          # Express API, adapters, sync engine, SQLite
-├─ docs/             # Provider setup documentation
-├─ package.json      # Root workspace scripts
-├─ LICENSE
-└─ README.md
-```
+---
 
-## 🔄 How OmniCloud works
+## 🔄 How OpenCloud Works
+
+### Architecture
 ```mermaid
 flowchart TD
-    U[User] --> F[Frontend<br/>Vue 3 + Vite]
-    F -->|REST API requests| B[Backend API<br/>Express.js]
+    U[👤 User] --> F[Frontend<br/>Vue 3 + Vite + Pinia]
+    F -->|REST API| B[Backend API<br/>Express.js]
 
-    subgraph Frontend Features
-        F1[Auth]
-        F2[Accounts]
-        F3[File Explorer]
-        F4[Uploads]
-        F5[Settings]
-        F6[Allocation]
-    end
-
-    F --> F1
-    F --> F2
-    F --> F3
-    F --> F4
-    F --> F5
-    F --> F6
+    B --> AU[Auth & Session Layer]
+    AU --> DB[(SQLite)]
 
     B --> A[Adapter Registry]
     A --> G[Google Drive Adapter]
@@ -122,23 +126,11 @@ flowchart TD
     A --> P[pCloud Adapter]
     A --> Y[Yandex Adapter]
     A --> S[S3 Adapter]
+    G & O & D & M & P & Y & S --> CP[☁️ Cloud Providers]
 
-    G --> CP[Cloud Providers]
-    O --> CP
-    D --> CP
-    M --> CP
-    P --> CP
-    Y --> CP
-    S --> CP
-
-    B --> N[Normalized OmniCloud Data Model]
+    B --> N[Normalized OpenCloud Data Model]
     CP --> N
-
-    N --> DB[SQLite Metadata Mirror]
-    B --> DB
-
-    B -->|Upload progress| WS[WebSocket Hub]
-    WS --> F
+    N --> DB[(SQLite Metadata Mirror)]
 
     B --> SY[Sync Service]
     SY --> CRON[node-cron Scheduler]
@@ -146,71 +138,101 @@ flowchart TD
     SY --> DB
 
     B --> AL[Allocation Service]
-    AL --> ACC[Target Account Selection<br/>round_robin / weighted / least_used / most_free / manual]
+    AL --> ACC[Target Account Selection<br/>round_robin / least_used / most_free / manual]
     ACC --> CP
-
-    B --> AU[Auth & Session Layer]
-    AU --> DB
 ```
-At a high level:
 
-1. The frontend calls the REST API for auth, accounts, files, uploads, settings, and allocation
-2. The backend selects the appropriate provider adapter (`google_drive`, `onedrive`, `dropbox`, `mega`, `pcloud`, `yandex`, `s3`)
+1. The frontend talks to the REST API for auth, accounts, files, uploads, settings and allocation
+2. The backend picks the right adapter (`google_drive`, `onedrive`, `dropbox`, `mega`, `pcloud`, `yandex`, `s3`)
 3. Provider responses are normalized into the OmniCloud data model
-4. File metadata is mirrored into SQLite for fast access
-5. Upload progress is pushed to the client over WebSocket
-6. The sync service keeps local metadata aligned with provider state
+4. Metadata is mirrored into SQLite for instant navigation & search
+5. The sync service keeps the local mirror aligned with provider state on a schedule
 
-## 🧩 Current application views
+### Upload & real-time progress
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as 👤 User
+    participant F as Frontend (Vue)
+    participant B as Backend API (Express)
+    participant AL as Allocation
+    participant A as Provider Adapter
+    participant P as ☁️ Cloud Provider
+    participant W as WebSocket Hub
 
-The frontend currently includes these main views:
+    U->>F: Drag & drop files
+    F->>B: POST /api/uploads/initiate
+    B->>AL: Pick target account
+    AL-->>B: accountId (strategy-aware)
+    B->>A: Create upload session
+    A->>P: Initiate upload
+    B-->>F: 200 { uploadId }
+    loop Chunked stream
+        F->>B: POST /api/uploads/:id/stream
+        B->>A: Forward chunk
+        A->>P: Upload chunk
+    end
+    A-->>B: progress event
+    B-->>W: push { uploadId, progress }
+    W-->>F: total progress %
+    F-->>U: 📊 Animated progress UI
+```
 
-- `/` → Home dashboard
-- `/my-drive` → main file explorer
-- `/shared-with-me` → shared files from supported providers
-- `/recent` → recent files
-- `/starred` → starred files
-- `/quota` → quota overview, account management, allocation settings
-- `/login` and `/register` → used in hosted mode
+### Global search flow
+```mermaid
+flowchart LR
+    U[👤 User types query] --> F[My Drive view<br/>350ms debounce]
+    F --> S[fileTree store<br/>searchGlobal]
+    S --> API[GET /api/files?search=term]
+    API --> DB[(SQLite<br/>metadata mirror)]
+    DB --> R[JSON results<br/>across all drives]
+    R --> V[Results grid<br/>provider badges + filters]
+    V --> C{Clear?}
+    C -->|Yes ✖| BACK[🔙 Back to folder view]
+    C -->|No| V
+```
 
-## 📋 Requirements
+---
 
-Before running the project, make sure you have:
+## 🧩 Application Views
 
-- Node.js 20+
-- npm
-- Provider credentials for the cloud services you want to use
+| Route | View |
+| ----- | ---- |
+| `/` | 🏠 Home dashboard |
+| `/my-drive` | 📁 Main unified file explorer |
+| `/shared-with-me` | 🤝 Shared files from supported providers |
+| `/recent` | 🕘 Recent files |
+| `/starred` | ⭐ Starred files |
+| `/quota` | 📊 Quota overview + account & allocation settings |
+| `/login` · `/register` | 🔐 Auth pages (hosted mode) |
 
-Using a current compatible Node.js LTS release is recommended.
+---
 
-## 🛠️ Local setup
+## 🛠️ Local Setup
 
-### 1. Install dependencies
+### 1 · Requirements
+- **Node.js 20+** (a current LTS release is recommended)
+- **npm**
+- Provider credentials for the cloud services you want to connect
 
-From the project root:
-
+### 2 · Install dependencies
 ```bash
 npm install
 ```
+> Workspaces: installs everything for `backend/` and `frontend/` automatically.
 
-### 2. Create the backend environment file
-
-Copy the env template:
-
+### 3 · Create the backend environment file
 ```bash
-copy backend/.env.example backend/.env
+copy backend\.env.example backend\.env
 ```
+> On macOS / Linux: `cp backend/.env.example backend/.env`
 
-Or create it manually based on `backend/.env.example`.
-
-### 3. Fill in the environment variables
-
-Example environment values for the current project:
-
+### 4 · Add environment variables
+Full example (`backend/.env`):
 ```env
 PORT=8787
 
-# local = single-user, hosted = multi-user with login/register
+# local = single-user · hosted = multi-user with login/register
 APP_MODE=local
 
 CORS_ORIGIN=http://localhost:5173
@@ -242,42 +264,33 @@ YANDEX_REDIRECT_URI=http://localhost:8787/api/accounts/yandex/callback
 ```
 
 Notes:
-- MEGA and pCloud do not use `.env` credentials; they are connected from the UI using email/password
-- S3-compatible storage is configured from the UI using endpoint/bucket/access key/secret key
-- `APP_MODE=hosted` enables the register/login/logout flow using session cookies
+- **MEGA** & **pCloud** connect from the UI with email/password — no `.env` keys
+- **S3-compatible** storage is configured from the UI (endpoint / bucket / keys)
+- `APP_MODE=hosted` enables register/login/logout with session cookies
 
-### 4. Configure provider credentials
+### 5 · Configure provider credentials
+Follow the step-by-step guide: [`docs/provider-setup.md`](docs/provider-setup.md)
 
-Follow the detailed guide in:
-
-- [`docs/provider-setup.md`](docs/provider-setup.md)
-
-## 💻 Development
-
-Run the frontend and backend together from the root:
-
+### 6 · Run it 🚀
 ```bash
 npm run dev
 ```
 
-Default local endpoints:
+| Endpoint  | URL                        |
+| --------- | -------------------------- |
+| 🌐 Frontend | `http://localhost:5173` |
+| ⚙️ API      | `http://localhost:8787` |
 
-- Frontend: `http://localhost:5173`
-- API: `http://localhost:8787`
+---
 
-## 🐳 Docker setup
+## 🐳 Docker Setup
 
-The project includes Docker integration for running the API and production frontend behind Nginx.
-
-### 1. Create the backend environment file
+Run the API and the production frontend (behind Nginx) with Docker Compose.
 
 ```bash
-copy backend/.env.example backend/.env
+copy backend\.env.example backend\.env
 ```
-
-Then fill in the provider credentials and secrets in `backend/.env`.
-
-For the default Docker Compose setup, the app is exposed at `http://localhost:8080`, so OAuth redirect URLs should use the proxied API URLs:
+Then fill in credentials and secrets. For Compose, the app is exposed on **port 8080**, so OAuth redirects use proxied URLs:
 
 ```env
 GOOGLE_REDIRECT_URI=http://localhost:8080/api/accounts/google/callback
@@ -286,141 +299,143 @@ DROPBOX_REDIRECT_URI=http://localhost:8080/api/accounts/dropbox/callback
 YANDEX_REDIRECT_URI=http://localhost:8080/api/accounts/yandex/callback
 ```
 
-These values are also set in `docker-compose.yml` so they override the local-development defaults from `backend/.env` when running with Compose.
-
-### 2. Build and start the containers
-
 ```bash
 docker compose up --build
 ```
 
-Open the app at:
+- 🌐 Frontend: `http://localhost:8080`
+- ⚙️ API (through Nginx): `http://localhost:8080/api`
 
-- Frontend: `http://localhost:8080`
-- API through Nginx proxy: `http://localhost:8080/api`
+Stop everything: `docker compose down`
+Remove containers **and** the persisted SQLite volume: `docker compose down -v`
 
-### 3. Stop the containers
+---
 
-```bash
-docker compose down
-```
+## 📜 Available Scripts
 
-SQLite data is persisted in the Docker volume `omnicloud_api_data`. To remove containers and the persisted Docker database volume:
-
-```bash
-docker compose down -v
-```
-
-## 📌 Available scripts
-
-### Root scripts
-
+### Root
 | Script | Description |
-| --- | --- |
-| `npm run dev` | Run frontend and backend in parallel |
-| `npm run build` | Build the production frontend |
+| ------ | ----------- |
+| `npm run dev` | Frontend + backend in parallel |
+| `npm run build` | Build production frontend |
 | `npm run build:web` | Build only the frontend |
-| `npm run dev:web` | Run the Vite dev server |
-| `npm run dev:api` | Run the backend with `node --watch` |
-| `npm start` | Start the backend without watch mode |
+| `npm run dev:web` | Vite dev server |
+| `npm run dev:api` | Backend with `node --watch` |
+| `npm start` | Backend without watch mode |
 
-### Frontend scripts
-
+### Frontend (`npm --prefix frontend`)
 | Script | Description |
-| --- | --- |
-| `npm --prefix frontend run dev` | Start the Vite dev server |
-| `npm --prefix frontend run build` | Build the frontend |
-| `npm --prefix frontend run preview` | Preview the built frontend |
+| ------ | ----------- |
+| `npm --prefix frontend run dev` | Vite dev server |
+| `npm --prefix frontend run build` | Production build |
+| `npm --prefix frontend run preview` | Preview production build |
 
-### Backend scripts
-
+### Backend (`npm --prefix backend`)
 | Script | Description |
-| --- | --- |
-| `npm --prefix backend run dev` | Run the API with file watch |
-| `npm --prefix backend start` | Run the API normally |
+| ------ | ----------- |
+| `npm --prefix backend run dev` | API with file watch |
+| `npm --prefix backend start` | API normally |
 
-## 🔌 API overview
+---
 
-These are the main API surfaces currently present in the project.
+## 🔌 API Overview
 
-### Health and sync
+### 💚 Health & sync
 - `GET /api/health`
 - `POST /api/sync/run`
 
-### Authentication
-- `GET /api/auth/me`
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `POST /api/auth/logout`
+### 🔐 Authentication
+- `GET /api/auth/me` · `POST /api/auth/register` · `POST /api/auth/login` · `POST /api/auth/logout`
 
-### Accounts
-- `GET /api/accounts`
-- `DELETE /api/accounts/:id`
-- `GET /api/accounts/google/status`
-- `GET /api/accounts/onedrive/status`
-- `GET /api/accounts/dropbox/status`
-- `GET /api/accounts/yandex/status`
-- `GET /api/accounts/mega/status`
-- `GET /api/accounts/google/connect`
-- `GET /api/accounts/onedrive/connect`
-- `GET /api/accounts/dropbox/connect`
-- `GET /api/accounts/yandex/connect`
-- `POST /api/accounts/mega/connect`
-- `POST /api/accounts/pcloud/connect`
-- `POST /api/accounts/s3/connect`
+### 📎 Accounts
+- `GET /api/accounts` · `DELETE /api/accounts/:id`
+- `GET /api/accounts/{provider}/status`
+- `GET /api/accounts/{provider}/connect` *(OAuth providers: google, onedrive, dropbox, yandex)*
+- `POST /api/accounts/mega/connect` · `POST /api/accounts/pcloud/connect` · `POST /api/accounts/s3/connect`
 - OAuth callback routes under `/api/accounts/*/callback`
 
-### Files
+### 📁 Files
 - `GET /api/files`
 - `GET /api/files?path=/`
-- `GET /api/files?recent=1`
-- `GET /api/files?starred=1`
-- `GET /api/files?shared=1`
-- `GET /api/files/:id/shared-children`
-- `PATCH /api/files/:id/star`
-- `POST /api/files/bulk/delete`
+- `GET /api/files?recent=1` · `GET /api/files?starred=1` · `GET /api/files?shared=1`
+- 🔍 **`GET /api/files?search=term`** — global search across all drives
+  - optional `provider`, `type` (file/folder), `accountId`, `limit`
+- `GET /api/files/:id/shared-children` · `PATCH /api/files/:id/star` · `POST /api/files/bulk/delete`
+- Plus detail, download, rename, create-folder and per-item delete routes in the file service / adapter workflow
 
-> The project also includes additional file routes for file explorer operations such as details, download, rename, create folder, and per-item delete in the file service / adapter workflow.
-
-### Uploads
+### ⬆️ Uploads
 - `POST /api/uploads/initiate`
 - `POST /api/uploads/:uploadId/stream`
-- `WS /ws/uploads?uploadId=...`
+- `WS /ws/uploads?uploadId=…`
 
-### Settings and allocation
-- `GET /api/settings`
-- `PATCH /api/settings`
-- `GET /api/allocation`
-- `PATCH /api/allocation`
+### ⚙️ Settings & allocation
+- `GET /api/settings` · `PATCH /api/settings`
+- `GET /api/allocation` · `PATCH /api/allocation`
 
-## 🧠 Storage allocation behavior
+---
 
-When an upload starts, the backend selects the target account based on the user's allocation configuration. This allows file distribution across providers to be automatic or manually prioritized depending on the user's preference.
+## 🧠 Storage Allocation Behavior
 
-Example use cases:
-- Distribute uploads across multiple accounts in rotation
-- Prioritize the account with the most free space
-- Enforce a specific manual ordering
+When an upload starts, the backend selects the **target account** from your allocation configuration — so files spread across providers automatically (or by your exact preference).
 
-## 🗄️ Data persistence
+```mermaid
+pie title Allocation strategies
+    "round_robin" : 25
+    "weighted_round_robin" : 25
+    "least_used" : 25
+    "most_free" : 25
+```
 
-Important data stored locally includes:
+Real-world examples:
+- 🔁 Distribute uploads in rotation across several accounts
+- 🕳️ Always fill the account with the most free space first
+- 👐 Enforce a strict manual ordering you define
 
-- Mirrored file metadata in SQLite (`backend/omnicloud.db`)
+---
+
+## 🗄️ Data Persistence
+
+OpenCloud stores locally (in `backend/omnicloud.db`, SQLite):
+- Mirrored file metadata
 - Linked account metadata
-- Encrypted provider credentials / token material
+- 🔒 Encrypted provider credentials / token material
 - User settings
-- Allocation config and rotation state
-- Auth session data for hosted mode
+- Allocation config & rotation state
+- Auth session data (hosted mode)
 
-## 🔒 Security notes
+---
 
-- Do not commit `backend/.env`
-- Do not commit local production or personal testing database files
-- OAuth client secrets, refresh tokens, session secrets, access keys, and provider passwords must be treated as sensitive
-- `OMNICLOUD_SECRET_HALF` is used as part of local encryption key material
-- For `APP_MODE=hosted`, use a strong `AUTH_SECRET` and the correct frontend origin
+## 🔒 Security Notes
+
+- ⛔ Never commit `backend/.env`
+- ⛔ Never commit local production or personal test databases
+- 🔑 Treat OAuth secrets, refresh tokens, session secrets, access keys and provider passwords as sensitive
+- 🧩 `OMNICLOUD_SECRET_HALF` is part of the local encryption key material
+- 🛡️ In `APP_MODE=hosted`, use a strong `AUTH_SECRET` and the correct frontend origin
+
+---
+
+## 🤝 Contributing
+
+Contributions, issues and feature requests are welcome!
+
+1. 🍴 Fork the repository
+2. 🌿 Create a feature branch (`git checkout -b feat/awesome-thing`)
+3. ✍️ Commit your changes (`feat: add awesome thing`)
+4. 🚀 Open a Pull Request
+
+---
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE).
+Distributed under the **MIT License**. See [LICENSE](LICENSE).
+
+---
+
+<div align="center">
+
+**Made with ❤️ and lots of ☁️ — OpenCloud**
+
+**⭐ Star it · 🍴 Fork it · 🚀 Ship it**
+
+</div>
