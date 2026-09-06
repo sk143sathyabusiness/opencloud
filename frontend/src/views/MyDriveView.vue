@@ -28,7 +28,7 @@ const { t } = useI18n();
 
 const fileTreeStore = useFileTreeStore();
 const uploadQueueStore = useUploadQueueStore();
-const { currentPath, breadcrumbs, searchTerm, isLoading } = storeToRefs(fileTreeStore);
+const { currentPath, breadcrumbs, searchTerm, isLoading, isSearchMode, isSearching } = storeToRefs(fileTreeStore);
 const { uploads, totalProgress } = storeToRefs(uploadQueueStore);
 
 const isDragActive = ref(false);
@@ -107,8 +107,34 @@ const { renderCount, visibleItems: renderedFiles, handleScroll: handleListScroll
 	threshold: 240,
 });
 
+let searchDebounceTimer = null;
+
+function clearGlobalSearch() {
+	if (searchDebounceTimer) {
+		window.clearTimeout(searchDebounceTimer);
+		searchDebounceTimer = null;
+	}
+	fileTreeStore.clearSearch();
+}
+
 watch(searchTerm, (term) => {
-	fileTreeStore.applySearch(term);
+	if (searchDebounceTimer) {
+		window.clearTimeout(searchDebounceTimer);
+		searchDebounceTimer = null;
+	}
+	const query = String(term ?? '').trim();
+	if (!query) {
+		fileTreeStore.clearSearch();
+		return;
+	}
+	// Debounce global search across all connected drives (SQLite mirror).
+	searchDebounceTimer = window.setTimeout(async () => {
+		try {
+			await fileTreeStore.searchGlobal(query, { limit: 100 });
+		} catch {
+			// searchError is stored on the store; list simply shows empty.
+		}
+	}, 350);
 });
 
 watch(() => fileTreeStore.files, consumePendingHighlight, { flush: 'post' });
@@ -170,6 +196,9 @@ function openItemOnDoubleClick(file) {
 function openFolder(file) {
 	if (!file.is_folder) return;
 	clearSelection();
+	if (fileTreeStore.isSearchMode) {
+		fileTreeStore.clearSearch();
+	}
 	const basePath = file.virtual_path || (currentPath.value === '/' ? '/' : `${currentPath.value}/`);
 	const nextPath = `${basePath}${file.file_name}/`;
 	fileTreeStore.navigate(nextPath.startsWith('/') ? nextPath : `/${nextPath}`);
@@ -186,6 +215,10 @@ function resetFileInput(inputRef) {
 }
 
 async function refreshCurrentFolder() {
+	if (fileTreeStore.isSearchMode && fileTreeStore.searchTerm.trim()) {
+		await fileTreeStore.searchGlobal(fileTreeStore.searchTerm, { limit: 100 });
+		return;
+	}
 	await fileTreeStore.loadFiles(currentPath.value);
 }
 
@@ -332,6 +365,10 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
 	clearHighlightTimer();
+	if (searchDebounceTimer) {
+		window.clearTimeout(searchDebounceTimer);
+		searchDebounceTimer = null;
+	}
 	window.removeEventListener('dragend', resetDragState);
 	window.removeEventListener('drop', resetDragState);
 	window.removeEventListener('blur', resetDragState);
@@ -353,11 +390,12 @@ onBeforeUnmount(() => {
 			</div>
 
 			<div class="mb-2 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-				<nav aria-label="Breadcrumb" class="m-0 flex flex-wrap items-center gap-1 text-2xl font-normal text-[#202124] dark:text-slate-100">
+				<nav aria-label="Breadcrumb" class="m-0 flex min-w-0 flex-wrap items-center gap-1 text-2xl font-normal text-[#202124] dark:text-slate-100">
 					<template v-for="(crumb, index) in breadcrumbs" :key="crumb.path">
 						<button type="button" class="max-w-[220px] truncate text-left transition hover:text-[#1a73e8] dark:hover:text-sky-300" @click="fileTreeStore.navigate(crumb.path)">{{ crumb.label === 'Root' ? 'Drive Saya' : crumb.label }}</button>
 						<IconChevronRight v-if="index < breadcrumbs.length - 1" :size="18" :stroke="2" class="mx-1 text-[#5f6368] dark:text-slate-400" />
 					</template>
+					<button v-if="isSearchMode" type="button" class="ml-2 shrink-0 rounded-full border border-[#dadce0] px-3 py-1 text-sm font-medium text-[#5f6368] transition hover:border-[#1a73e8] hover:text-[#1a73e8] dark:border-slate-600 dark:text-slate-300" @click="clearGlobalSearch">{{ t('common.clear') }}</button>
 				</nav>
 				<FileListViewModeToggle v-model="isGridView" />
 			</div>
@@ -380,8 +418,8 @@ onBeforeUnmount(() => {
 							<FileListHeader :sortable="true" :sort-by="sortBy" :sort-direction="sortDirection" @sort="setSort" />
 
 							<FileListRow v-for="item in renderedFiles" :key="item.id" :item="item" :selected="isSelected(item)" :highlighted="highlightedFileId === item.id" name-field="display_name" @select="(event) => selectItem(event, item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
-							<div v-if="!sortedFiles.length && !isLoading" class="p-[18px] text-[#5f6368] dark:text-slate-400">{{ t('drive.noFiles') }}</div>
-							<div v-if="isLoading" class="p-[18px]">
+							<div v-if="!sortedFiles.length && !isLoading && !isSearching" class="p-[18px] text-[#5f6368] dark:text-slate-400">{{ isSearchMode ? t('drive.noSearchResults') : t('drive.noFiles') }}</div>
+							<div v-if="isLoading || isSearching" class="p-[18px]">
 								<LoadingState />
 							</div>
 						</div>
@@ -393,8 +431,8 @@ onBeforeUnmount(() => {
 			<div v-else class="relative">
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
 					<FileListGridCard v-for="item in renderedFiles" :key="item.id" :item="item" :selected="isSelected(item)" :highlighted="highlightedFileId === item.id" name-field="display_name" @select="(event) => selectItem(event, item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
-					<div v-if="!sortedFiles.length && !isLoading" class="col-span-full rounded-2xl border border-dashed border-[#dadce0] bg-white px-5 py-8 text-center text-[#5f6368] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">{{ t('drive.noFiles') }}</div>
-					<div v-if="isLoading" class="col-span-full rounded-2xl border border-dashed border-[#dadce0] bg-white px-5 py-8 text-center text-[#5f6368] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+					<div v-if="!sortedFiles.length && !isLoading && !isSearching" class="col-span-full rounded-2xl border border-dashed border-[#dadce0] bg-white px-5 py-8 text-center text-[#5f6368] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">{{ isSearchMode ? t('drive.noSearchResults') : t('drive.noFiles') }}</div>
+					<div v-if="isLoading || isSearching" class="col-span-full rounded-2xl border border-dashed border-[#dadce0] bg-white px-5 py-8 text-center text-[#5f6368] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
 						<LoadingState />
 					</div>
 				</div>

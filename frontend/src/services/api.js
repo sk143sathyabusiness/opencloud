@@ -62,8 +62,15 @@ export const api = {
 		const query = new URLSearchParams({ path: virtualPath }).toString();
 		return request(`/files?${query}`);
 	},
-	searchFiles(term, limit = 50) {
-		const query = new URLSearchParams({ search: term, limit: String(limit) }).toString();
+	searchFiles(term, options = {}) {
+		const limit = typeof options === 'number' ? options : options.limit;
+		const params = { search: term, limit: String(limit || 50) };
+		if (typeof options === 'object' && options !== null) {
+			if (options.provider) params.provider = options.provider;
+			if (options.type) params.type = options.type;
+			if (options.accountId) params.accountId = options.accountId;
+		}
+		const query = new URLSearchParams(params).toString();
 		return request(`/files?${query}`);
 	},
 	listStarredFiles() {

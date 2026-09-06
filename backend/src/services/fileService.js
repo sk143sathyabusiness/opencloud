@@ -39,28 +39,66 @@ export function listFilesByPath(userId, virtualPath = '/') {
 	return buildDisplayNames(rows);
 }
 
-export function searchFiles(userId, term = '', limit = 50) {
+export function searchFiles(userId, term = '', limitOrOptions = 50) {
+	const options = typeof limitOrOptions === 'object' && limitOrOptions !== null
+		? limitOrOptions
+		: { limit: limitOrOptions };
 	const normalizedTerm = String(term || '').trim();
 	if (!normalizedTerm) return [];
 
-	const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 100));
+	const safeLimit = Math.max(1, Math.min(Number(options.limit) || 50, 200));
+	// Split on whitespace for multi-token AND search, escape LIKE wildcards.
+	const escapeLike = (value) => String(value).replace(/[\\%_]/g, (ch) => `\\${ch}`);
+	const tokens = normalizedTerm.split(/\s+/).filter(Boolean).slice(0, 8);
+	if (!tokens.length) return [];
+
+	const where = ['fm.user_id = ?', `ca.status = 'active'`];
+	const params = [userId];
+
+	if (options.provider) {
+		where.push('ca.provider = ?');
+		params.push(String(options.provider));
+	}
+	if (options.accountId) {
+		where.push('fm.cloud_account_id = ?');
+		params.push(String(options.accountId));
+	}
+	if (options.type === 'folder') {
+		where.push('fm.is_folder = 1');
+	} else if (options.type === 'file') {
+		where.push('fm.is_folder = 0');
+	}
+
+	// Every token must match at least one searchable field (global search).
+	const tokenClauses = tokens.map(() => `(
+				fm.file_name LIKE ? ESCAPE '\\' COLLATE NOCASE
+				OR fm.mime_type LIKE ? ESCAPE '\\' COLLATE NOCASE
+				OR fm.virtual_path LIKE ? ESCAPE '\\' COLLATE NOCASE
+				OR ca.provider LIKE ? ESCAPE '\\' COLLATE NOCASE
+				OR ca.email LIKE ? ESCAPE '\\' COLLATE NOCASE
+			)`);
+	for (const token of tokens) {
+		const pattern = `%${escapeLike(token)}%`;
+		params.push(pattern, pattern, pattern, pattern, pattern);
+	}
+
+	const firstPattern = `%${escapeLike(tokens[0])}%`;
 	const rows = db
 		.prepare(`
       SELECT
         fm.*, ca.provider, ca.email
       FROM file_metadata fm
       INNER JOIN cloud_accounts ca ON ca.id = fm.cloud_account_id
-			WHERE fm.user_id = ?
-				AND ca.status = 'active'
-				AND fm.file_name LIKE ? COLLATE NOCASE
+			WHERE ${where.join(' AND ')}
+				AND ${tokenClauses.join(' AND ')}
       ORDER BY
-				CASE WHEN fm.file_name LIKE ? COLLATE NOCASE THEN 0 ELSE 1 END,
+				CASE WHEN fm.file_name LIKE ? ESCAPE '\\' COLLATE NOCASE THEN 0 ELSE 1 END,
 				fm.is_folder DESC,
-				COALESCE(fm.remote_created_time, fm.created_at) DESC,
+				COALESCE(fm.remote_modified_time, fm.remote_created_time, fm.updated_at) DESC,
 				fm.file_name COLLATE NOCASE ASC
 			LIMIT ?
     `)
-		.all(userId, `%${normalizedTerm}%`, `${normalizedTerm}%`, safeLimit);
+		.all(...params, `${firstPattern}`, safeLimit);
 
 	return buildDisplayNames(rows);
 }

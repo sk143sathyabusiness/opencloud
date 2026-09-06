@@ -169,7 +169,12 @@ async function listSharedWithMeFiles(userId) {
 router.get('/files', async (req, res, next) => {
 	try {
 		const files = req.query.search
-			? searchFiles(req.user.id, req.query.search, req.query.limit)
+			? searchFiles(req.user.id, req.query.search, {
+				limit: req.query.limit,
+				provider: req.query.provider || undefined,
+				type: req.query.type || undefined,
+				accountId: req.query.accountId || undefined,
+			})
 			: req.query.starred === '1'
 			? listStarredFiles(req.user.id)
 			: req.query.recent === '1'
