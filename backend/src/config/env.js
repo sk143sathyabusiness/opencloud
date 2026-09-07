@@ -42,6 +42,8 @@ export const env = {
 		process.env.YANDEX_REDIRECT_URI || 'http://localhost:8787/api/accounts/yandex/callback',
 	telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
 	telegramChatId: process.env.TELEGRAM_CHAT_ID || '',
+	trashRetentionDays: Number(process.env.TRASH_RETENTION_DAYS || 30),
+	quotaHardLimitEnabled: process.env.QUOTA_HARD_LIMIT_ENABLED !== 'false',
 };
 
 export function redactEnv() {

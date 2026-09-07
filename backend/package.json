@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch src/server.js",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "test": "node --test \"tests/*.test.mjs\""
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1065.0",

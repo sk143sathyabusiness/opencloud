@@ -76,6 +76,25 @@ db.exec(`
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS trash (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    cloud_account_id TEXT NOT NULL,
+    remote_file_id TEXT NOT NULL,
+    remote_parent_id TEXT,
+    virtual_path TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    is_folder INTEGER NOT NULL DEFAULT 0,
+    size INTEGER NOT NULL DEFAULT 0,
+    mime_type TEXT,
+    remote_created_time TEXT,
+    remote_modified_time TEXT,
+    deleted_at TEXT NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY(cloud_account_id) REFERENCES cloud_accounts(id) ON DELETE CASCADE,
+    UNIQUE(user_id, cloud_account_id, remote_file_id)
+  );
 `);
 
 db.prepare(`
@@ -97,4 +116,5 @@ db.exec(`
     ON file_metadata(user_id, cloud_account_id);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_user_settings_user_key
     ON user_settings(user_id, key);
+  CREATE INDEX IF NOT EXISTS idx_trash_user_deleted_at ON trash(user_id, deleted_at);
 `);

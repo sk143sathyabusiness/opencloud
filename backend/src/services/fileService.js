@@ -164,6 +164,13 @@ export function listAllFiles(userId) {
 	return db.prepare('SELECT * FROM file_metadata WHERE user_id = ?').all(userId);
 }
 
+export function getTrashedRemoteIds(userId, cloudAccountId) {
+	const rows = db
+		.prepare('SELECT remote_file_id FROM trash WHERE user_id = ? AND cloud_account_id = ?')
+		.all(userId, cloudAccountId);
+	return new Set(rows.map((row) => row.remote_file_id));
+}
+
 export function listStarredFiles(userId) {
 	const rows = db
 		.prepare(`
@@ -215,7 +222,10 @@ export function setFileStarred(userId, fileId, isStarred) {
 }
 
 export function replaceFilesForAccount(userId, cloudAccountId, records) {
-	const normalizedRecords = records.map((record) => ({
+	const trashedIds = getTrashedRemoteIds(userId, cloudAccountId);
+	const normalizedRecords = records
+		.filter((record) => !trashedIds.has(record.remote_file_id))
+		.map((record) => ({
 		id: record.id || randomUUID(),
 		user_id: userId,
 		virtual_path: normalizePath(record.virtual_path),
