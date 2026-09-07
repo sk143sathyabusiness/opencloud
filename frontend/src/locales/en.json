@@ -55,6 +55,7 @@
 		"refresh": "Refresh",
 		"sync": "Sync",
 		"settings": "Settings",
+		"days": "days",
 		"help": "Help",
 		"language": "Language",
 		"theme": "Theme",
@@ -464,6 +465,22 @@
 		"files": "files",
 		"wasted": "potential waste",
 		"confirmDelete": "Move {name} to trash?"
+	},
+	"share": {
+		"title": "Share link",
+		"getLink": "Get link",
+		"copy": "Copy",
+		"copied": "Copied",
+		"expiry": "Expiry",
+		"expires": "Expires",
+		"password": "Password",
+		"optional": "optional",
+		"create": "Create link",
+		"revoke": "Revoke link",
+		"revoked": "Link revoked",
+		"noExpiry": "Never expires",
+		"hasLink": "Has link",
+		"downloadCount": "downloads"
 	},
 	"trash": {
 		"title": "Trash",

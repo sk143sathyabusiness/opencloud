@@ -1,4 +1,4 @@
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { api } from '../services/api';
 import { useContextMenu } from './useContextMenu';
 import { useFileSelection } from './useFileSelection';
@@ -246,6 +246,23 @@ export function useFileActions({
 		}
 	}
 
+	const canShareSelection = computed(
+		() => selectedCount.value === 1 && Boolean(primarySelectedFile.value) && !primarySelectedFile.value.is_folder,
+	);
+	const shareLinkFile = ref(null);
+	const isShareLinkOpen = ref(false);
+	function openShareLinkModal() {
+		const file = resolveFile();
+		if (!file || file.is_folder) return;
+		closeContextMenu();
+		shareLinkFile.value = file;
+		isShareLinkOpen.value = true;
+	}
+	function closeShareLinkModal() {
+		isShareLinkOpen.value = false;
+		shareLinkFile.value = null;
+	}
+
 	return {
 		contextMenu,
 		contextMenuRef,
@@ -291,5 +308,10 @@ export function useFileActions({
 		isPrimarySelectedStarred,
 		canOpenSelection,
 		canPreviewSelection,
+		canShareSelection,
+		shareLinkFile,
+		isShareLinkOpen,
+		openShareLinkModal,
+		closeShareLinkModal,
 	};
 }

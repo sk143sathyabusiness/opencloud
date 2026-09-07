@@ -55,6 +55,7 @@
 		"refresh": "Segarkan",
 		"sync": "Sinkronkan",
 		"settings": "Pengaturan",
+		"days": "hari",
 		"help": "Bantuan",
 		"language": "Bahasa",
 		"theme": "Tema",
@@ -465,6 +466,22 @@
 		"files": "file",
 		"wasted": "potensi terbuang",
 		"confirmDelete": "Pindahkan {name} ke sampah?"
+	},
+	"share": {
+		"title": "Tautan berbagi",
+		"getLink": "Dapatkan tautan",
+		"copy": "Salin",
+		"copied": "Tersalin",
+		"expiry": "Kedaluwarsa",
+		"expires": "Kedaluwarsa",
+		"password": "Kata sandi",
+		"optional": "opsional",
+		"create": "Buat tautan",
+		"revoke": "Cabut tautan",
+		"revoked": "Tautan dicabut",
+		"noExpiry": "Tidak pernah kedaluwarsa",
+		"hasLink": "Memiliki tautan",
+		"downloadCount": "unduhan"
 	},
 	"trash": {
 		"title": "Sampah",

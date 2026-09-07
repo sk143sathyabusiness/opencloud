@@ -14,6 +14,7 @@ import FileListGridCard from '../components/FileListGridCard.vue';
 import FileListContextMenu from '../components/FileListContextMenu.vue';
 import FilePreviewModal from '../components/FilePreviewModal.vue';
 import FileDetailsModal from '../components/FileDetailsModal.vue';
+import ShareLinkModal from '../components/ShareLinkModal.vue';
 import LoadingState from '../components/LoadingState.vue';
 import { useIncrementalRender } from '../composables/useIncrementalRender';
 import { useFileListView } from '../composables/useFileListView';
@@ -103,6 +104,11 @@ const {
 	closeContextMenu,
 	actionInProgress,
 	actionLabel,
+	canShareSelection,
+	shareLinkFile,
+	isShareLinkOpen,
+	openShareLinkModal,
+	closeShareLinkModal,
 } = view;
 
 const { renderCount, visibleItems: renderedFiles, handleScroll: handleListScroll } = useIncrementalRender(view.sortedFiles, {
@@ -443,9 +449,10 @@ onBeforeUnmount(() => {
 				<LoadingState v-if="actionInProgress" variant="overlay" :message="actionLabel || t('drive.processing')" />
 			</div>
 
-			<FileListContextMenu :context-menu-ref="contextMenuRef" :context-menu="contextMenu" :selected-count="selectedCount" :primary-selected-file="primarySelectedFile" :can-preview="canPreviewSelection" :can-toggle-star="canToggleStarSelection" :is-primary-starred="isPrimarySelectedStarred" :can-download="canDownloadSelection" :can-backup-to-telegram="canBackupToTelegram" :can-rename="canRenameSelection" :can-show-details="selectedCount === 1" :can-open-folder="canOpenSelection" @open-folder="openSelectedItem" @preview="openPreview" @toggle-star="toggleSelectedFileStar" @download="downloadSelection" @rename="renameSelectedFile" @show-details="showSelectedFileDetails" @delete="deleteSelectedFile" @backup="backupSelectedFileToTelegram" @close="closeContextMenu" />
+			<FileListContextMenu :context-menu-ref="contextMenuRef" :context-menu="contextMenu" :selected-count="selectedCount" :primary-selected-file="primarySelectedFile" :can-preview="canPreviewSelection" :can-toggle-star="canToggleStarSelection" :is-primary-starred="isPrimarySelectedStarred" :can-download="canDownloadSelection" :can-backup-to-telegram="canBackupToTelegram" :can-rename="canRenameSelection" :can-show-details="selectedCount === 1" :can-open-folder="canOpenSelection" :can-share="canShareSelection" @open-folder="openSelectedItem" @preview="openPreview" @toggle-star="toggleSelectedFileStar" @download="downloadSelection" @rename="renameSelectedFile" @show-details="showSelectedFileDetails" @delete="deleteSelectedFile" @backup="backupSelectedFileToTelegram" @get-link="openShareLinkModal" @close="closeContextMenu" />
 
 			<FileDetailsModal :file="detailsFile" :is-open="isDetailsOpen" :is-folder="detailsFile?.is_folder" :provider-label-fn="providerLabel" @close="closeDetails" />
+			<ShareLinkModal :open="isShareLinkOpen" :file="shareLinkFile" @close="closeShareLinkModal" />
 			<FilePreviewModal :file="previewFile" :is-open="isPreviewOpen" :is-loading="isPreviewLoading" @close="closePreview" @loaded="handlePreviewLoaded" @failed="handlePreviewFailed" />
 		</div>
 

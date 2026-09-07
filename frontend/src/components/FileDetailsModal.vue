@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { IconX } from '@tabler/icons-vue';
 import {
@@ -9,6 +9,7 @@ import {
 	getModifiedTime,
 	providerLabel as defaultProviderLabel,
 } from '../composables/useFormatFile.js';
+import { api } from '../services/api';
 
 const props = defineProps({
 	file: { type: Object, default: null },
@@ -35,6 +36,20 @@ const remoteId = computed(() => props.file?.remote_file_id || props.file?.id || 
 const location = computed(() => props.file?.virtual_path || props.locationFallback || '—');
 const title = computed(() => (props.isFolder ? `${t('drive.details')} ${t('drive.folder')}` : t('drive.details')));
 
+const liveLinks = ref([]);
+async function loadLinks() {
+	try {
+		const { data } = await api.listShareLinks();
+		liveLinks.value = (data || []).filter((link) => link.file_id === props.file?.id && !link.expired);
+	} catch {
+		liveLinks.value = [];
+	}
+}
+
+watch(() => props.isOpen, (open) => {
+	if (open) loadLinks();
+});
+
 function onBackdropClick() {
 	emit('close');
 }
@@ -51,6 +66,10 @@ function onBackdropClick() {
 				<button type="button" class="grid size-9 place-items-center rounded-full text-[#5f6368] hover:bg-black/5 dark:text-slate-400 dark:hover:bg-white/8" :title="t('common.close')" @click="emit('close')">
 					<IconX :size="18" :stroke="2" />
 				</button>
+			</div>
+
+			<div v-if="liveLinks.length" class="mt-3 inline-flex items-center gap-1.5 rounded-full bg-[#e8f0fe] px-3 py-1 text-xs font-medium text-[#1a73e8] dark:bg-sky-500/15 dark:text-blue-300">
+				{{ t('share.hasLink') }} ({{ liveLinks.length }})
 			</div>
 
 			<div v-if="props.isLoading" class="mt-6 text-sm text-[#5f6368] dark:text-slate-400">

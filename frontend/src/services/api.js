@@ -141,6 +141,20 @@ export const api = {
 			method: 'DELETE',
 		});
 	},
+	createShareLink(payload) {
+		return request('/share', {
+			method: 'POST',
+			body: JSON.stringify(payload),
+		});
+	},
+	listShareLinks() {
+		return request('/share');
+	},
+	revokeShareLink(token) {
+		return request(`/share/${token}`, {
+			method: 'DELETE',
+		});
+	},
 	getGoogleIntegrationStatus() {
 		return request('/accounts/google/status');
 	},
