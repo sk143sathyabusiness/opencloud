@@ -121,6 +121,9 @@ export const api = {
 	listTrash() {
 		return request('/files/trash');
 	},
+	duplicates() {
+		return request('/files/duplicates');
+	},
 	restoreTrashFiles(ids) {
 		return request('/files/trash/restore', {
 			method: 'POST',

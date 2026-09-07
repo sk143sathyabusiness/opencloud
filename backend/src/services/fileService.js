@@ -225,6 +225,51 @@ export function listRecentFiles(userId) {
 	return buildDisplayNames(rows);
 }
 
+export function findDuplicateGroups(userId) {
+	const groups = db
+		.prepare(`
+			SELECT fm.file_name, fm.size, COUNT(*) AS count, SUM(fm.size) AS totalBytes
+			FROM file_metadata fm
+			INNER JOIN cloud_accounts ca ON ca.id = fm.cloud_account_id
+			WHERE fm.user_id = ? AND fm.is_folder = 0 AND fm.size > 0 AND ca.status = 'active'
+			GROUP BY fm.file_name, fm.size
+			HAVING COUNT(*) >= 2
+			ORDER BY totalBytes DESC, fm.file_name COLLATE NOCASE
+		`)
+		.all(userId);
+
+	const items = db
+		.prepare(`
+			SELECT fm.*, ca.provider, ca.email
+			FROM file_metadata fm
+			INNER JOIN cloud_accounts ca ON ca.id = fm.cloud_account_id
+			WHERE fm.user_id = ?
+				AND fm.is_folder = 0 AND fm.size > 0
+				AND ca.status = 'active'
+			ORDER BY COALESCE(fm.remote_modified_time, fm.remote_created_time, fm.updated_at) DESC, fm.file_name COLLATE NOCASE
+		`)
+		.all(userId);
+
+	const byKey = (name, size) => `${name}|${size}`;
+	const itemGroups = new Map();
+	for (const item of items) {
+		const key = byKey(item.file_name, item.size);
+		if (!itemGroups.has(key)) itemGroups.set(key, []);
+		itemGroups.get(key).push(buildDisplayNames([item])[0]);
+	}
+
+	return groups
+		.map((group) => ({
+			key: byKey(group.file_name, group.size),
+			file_name: group.file_name,
+			size: Number(group.size),
+			count: Number(group.count),
+			totalBytes: Number(group.totalBytes),
+			items: itemGroups.get(byKey(group.file_name, group.size)) || [],
+		}))
+		.filter((group) => group.items.length >= 2);
+}
+
 export function updateFileStarredByRemoteId(userId, cloudAccountId, remoteFileId, isStarred) {
 	return db.prepare(`
 		UPDATE file_metadata

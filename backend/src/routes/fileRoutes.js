@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { ZipArchive } from 'archiver';
-import { listFilesByPath, getFileById, getFileByRemoteId, listRecentFiles, listStarredFiles, searchFiles, setFileStarred, updateFileStarredByRemoteId, getFolderByPath, listAllFiles, getDescendants } from '../services/fileService.js';
+import { listFilesByPath, getFileById, getFileByRemoteId, listRecentFiles, listStarredFiles, searchFiles, setFileStarred, updateFileStarredByRemoteId, getFolderByPath, listAllFiles, getDescendants, findDuplicateGroups } from '../services/fileService.js';
 import { getAccountById, getActiveAccounts } from '../services/accountService.js';
 import { createAdapter } from '../services/adapterRegistry.js';
 import { selectBestAccount } from '../services/spaceAllocator.js';
@@ -356,6 +356,10 @@ router.post('/files/bulk/download', async (req, res, next) => {
 
 router.get('/files/trash', (req, res) => {
 	return res.json({ data: listTrashedFiles(req.user.id) });
+});
+
+router.get('/files/duplicates', (req, res) => {
+	return res.json({ data: findDuplicateGroups(req.user.id) });
 });
 
 router.post('/files/trash/restore', (req, res) => {

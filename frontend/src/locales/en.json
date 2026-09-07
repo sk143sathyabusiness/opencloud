@@ -33,6 +33,7 @@
 	},
 	"common": {
 		"new": "New",
+		"items": "items",
 		"clear": "Clear",
 		"search": "Search",
 		"searchIn": "Search in {place}",
@@ -74,7 +75,8 @@
 		"recent": "Recent",
 		"starred": "Starred",
 		"storage": "Storage",
-		"trash": "Trash"
+		"trash": "Trash",
+		"duplicates": "Duplicates"
 	},
 	"header": {
 		"searchPlaceholder": "Search in OmniCloud",
@@ -452,6 +454,16 @@
 		"zipReady": "Archive ready",
 		"zipFailed": "Could not create the ZIP archive.",
 		"zipNote": "Large selections may take a moment."
+	},
+	"duplicates": {
+		"title": "Duplicate files",
+		"description": "Files with the same name and size, grouped across all providers.",
+		"empty": "No duplicates found",
+		"emptyState": "We couldn't find any files with identical name and size.",
+		"keepOne": "Keep one",
+		"files": "files",
+		"wasted": "potential waste",
+		"confirmDelete": "Move {name} to trash?"
 	},
 	"trash": {
 		"title": "Trash",

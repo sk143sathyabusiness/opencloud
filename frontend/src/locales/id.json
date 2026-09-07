@@ -33,6 +33,7 @@
 	},
 	"common": {
 		"new": "Baru",
+		"items": "item",
 		"clear": "Hapus",
 		"search": "Telusuri",
 		"searchIn": "Telusuri di {place}",
@@ -74,7 +75,8 @@
 		"recent": "Terbaru",
 		"starred": "Berbintang",
 		"storage": "Penyimpanan",
-		"trash": "Sampah"
+		"trash": "Sampah",
+		"duplicates": "Duplikat"
 	},
 	"header": {
 		"searchPlaceholder": "Telusuri di OmniCloud",
@@ -453,6 +455,16 @@
 		"zipReady": "Arsip siap",
 		"zipFailed": "Gagal membuat arsip ZIP.",
 		"zipNote": "Pilihan dalam jumlah besar mungkin memerlukan waktu."
+	},
+	"duplicates": {
+		"title": "File duplikat",
+		"description": "File dengan nama dan ukuran sama, dikelompokkan di semua penyedia.",
+		"empty": "Tidak ada duplikat",
+		"emptyState": "Tidak ditemukan file dengan nama dan ukuran yang identik.",
+		"keepOne": "Simpan satu",
+		"files": "file",
+		"wasted": "potensi terbuang",
+		"confirmDelete": "Pindahkan {name} ke sampah?"
 	},
 	"trash": {
 		"title": "Sampah",

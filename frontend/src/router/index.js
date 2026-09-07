@@ -6,6 +6,7 @@ import SharedWithMeView from '../views/SharedWithMeView.vue';
 import StarredView from '../views/StarredView.vue';
 import QuotaView from '../views/QuotaView.vue';
 import TrashView from '../views/TrashView.vue';
+import DuplicatesView from '../views/DuplicatesView.vue';
 import LoginView from '../views/auth/LoginView.vue';
 import RegisterView from '../views/auth/RegisterView.vue';
 import { useAuthStore } from '../stores/auth';
@@ -59,6 +60,11 @@ const router = createRouter({
 			path: '/trash',
 			name: 'trash',
 			component: TrashView,
+		},
+		{
+			path: '/duplicates',
+			name: 'duplicates',
+			component: DuplicatesView,
 		},
 	],
 });
