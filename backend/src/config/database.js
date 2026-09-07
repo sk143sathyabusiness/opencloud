@@ -95,6 +95,25 @@ db.exec(`
     FOREIGN KEY(cloud_account_id) REFERENCES cloud_accounts(id) ON DELETE CASCADE,
     UNIQUE(user_id, cloud_account_id, remote_file_id)
   );
+
+  CREATE TABLE IF NOT EXISTS share_links (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    file_id TEXT NOT NULL,
+    cloud_account_id TEXT NOT NULL,
+    remote_file_id TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    size INTEGER NOT NULL DEFAULT 0,
+    mime_type TEXT,
+    is_folder INTEGER NOT NULL DEFAULT 0,
+    token TEXT NOT NULL UNIQUE,
+    password_hash TEXT,
+    expires_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_used_at TEXT,
+    download_count INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
 `);
 
 db.prepare(`
@@ -110,6 +129,8 @@ db.exec(`
     ON cloud_accounts(user_id);
   CREATE INDEX IF NOT EXISTS idx_file_virtual_path ON file_metadata(user_id, virtual_path);
   CREATE INDEX IF NOT EXISTS idx_file_remote_id ON file_metadata(user_id, remote_file_id);
+  CREATE INDEX IF NOT EXISTS idx_share_links_user ON share_links(user_id);
+  CREATE INDEX IF NOT EXISTS idx_share_links_file ON share_links(file_id);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_file_account_remote_id
     ON file_metadata(cloud_account_id, remote_file_id);
   CREATE INDEX IF NOT EXISTS idx_file_user_account_id
