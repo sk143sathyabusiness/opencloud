@@ -39,6 +39,7 @@ export function softDeleteFilesByIds(userId, ids) {
 		let trashed = 0;
 		const missing = [];
 		const removeIds = [];
+		const deletedAt = new Date().toISOString();
 		for (const rawId of ids || []) {
 			const root = byId.get(rawId);
 			if (!root) {
@@ -70,8 +71,8 @@ export function softDeleteFilesByIds(userId, ids) {
 					mime_type: target.mime_type || null,
 					remote_created_time: target.remote_created_time || null,
 					remote_modified_time: target.remote_modified_time || null,
-					deleted_at: new Date().toISOString(),
-				});
+deleted_at: deletedAt,
+			});
 				byId.delete(target.id);
 				removeIds.push(target.id);
 				trashed += 1;
