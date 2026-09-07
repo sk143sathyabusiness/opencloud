@@ -117,6 +117,26 @@ export const api = {
 			body: JSON.stringify({ ids: fileIds }),
 		});
 	},
+	listTrash() {
+		return request('/files/trash');
+	},
+	restoreTrashFiles(ids) {
+		return request('/files/trash/restore', {
+			method: 'POST',
+			body: JSON.stringify({ ids }),
+		});
+	},
+	deleteTrashFiles(ids) {
+		return request('/files/trash', {
+			method: 'DELETE',
+			body: JSON.stringify({ ids }),
+		});
+	},
+	emptyTrash() {
+		return request('/files/trash/all', {
+			method: 'DELETE',
+		});
+	},
 	getGoogleIntegrationStatus() {
 		return request('/accounts/google/status');
 	},

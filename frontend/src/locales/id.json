@@ -441,5 +441,19 @@
 		"connectionFailed": "Tidak dapat terhubung ke kanal Telegram.",
 		"notConfigured": "Telegram belum dikonfigurasi.",
 		"notConfiguredHint": "Atur TELEGRAM_BOT_TOKEN dan TELEGRAM_CHAT_ID di backend/.env, lalu verifikasi koneksi."
+	},
+	"trash": {
+		"title": "Sampah",
+		"empty": "Sampah kosong",
+		"emptyState": "File yang Anda hapus akan tersimpan di sini hingga 30 hari.",
+		"restore": "Pulihkan",
+		"restored": "Dipulihkan",
+		"restoreSuccess": "Item dipulihkan ke lokasi asalnya.",
+		"deleteForever": "Hapus permanen",
+		"confirmDeleteForever": "Hapus permanen {name}? Tindakan ini tidak dapat dibatalkan.",
+		"emptyTrash": "Kosongkan sampah",
+		"confirmEmpty": "Hapus permanen semua isi sampah? Tindakan ini tidak dapat dibatalkan.",
+		"deletedAt": "Dihapus {date}",
+		"restoredAt": "Dipulihkan {date}"
 	}
 }

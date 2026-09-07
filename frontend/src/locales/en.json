@@ -440,5 +440,19 @@
 		"connectionFailed": "Could not connect to the Telegram channel.",
 		"notConfigured": "Telegram is not configured.",
 		"notConfiguredHint": "Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in backend/.env, then verify the connection."
+	},
+	"trash": {
+		"title": "Trash",
+		"empty": "Trash is empty",
+		"emptyState": "Files you delete land here for up to 30 days.",
+		"restore": "Restore",
+		"restored": "Restored",
+		"restoreSuccess": "Restored items to their original location.",
+		"deleteForever": "Delete forever",
+		"confirmDeleteForever": "Permanently delete {name}? This cannot be undone.",
+		"emptyTrash": "Empty trash",
+		"confirmEmpty": "Permanently delete everything in trash? This cannot be undone.",
+		"deletedAt": "Deleted {date}",
+		"restoredAt": "Restored {date}"
 	}
 }
