@@ -1,6 +1,6 @@
 {
   "name": "opencloud",
-  "compatibility_date": "2025-06-01",
+  "compatibility_date": "2025-12-01",
   "compatibility_flags": ["nodejs_compat"],
   "pages_build_output_dir": "frontend/dist",
   "d1_databases": [
