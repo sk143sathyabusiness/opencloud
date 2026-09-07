@@ -30,9 +30,10 @@ export function createShareLink({ userId, fileId, expiresInDays = 7, password })
 	}
 
 	const token = randomBytes(16).toString('hex');
-	const expiresAt = Number(expiresInDays) > 0
-		? new Date(Date.now() + Number(expiresInDays) * 24 * 60 * 60 * 1000).toISOString()
-		: null;
+	const days = Number(expiresInDays);
+	const expiresAt = days === 0
+		? null
+		: new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 
 	db.prepare(`
 		INSERT INTO share_links (
