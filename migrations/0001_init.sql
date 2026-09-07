@@ -1,0 +1,119 @@
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL DEFAULT '',
+    is_local INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS auth_sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_used_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS cloud_accounts (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    email TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    encrypted_credentials TEXT NOT NULL,
+    total_space INTEGER NOT NULL,
+    used_space INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('active', 'suspended', 'invalid_token')),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS file_metadata (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    virtual_path TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    is_folder INTEGER NOT NULL DEFAULT 0,
+	is_starred INTEGER NOT NULL DEFAULT 0,
+    size INTEGER NOT NULL DEFAULT 0,
+    mime_type TEXT,
+    cloud_account_id TEXT NOT NULL,
+    remote_file_id TEXT NOT NULL,
+    remote_parent_id TEXT,
+    remote_created_time TEXT,
+    remote_modified_time TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(cloud_account_id) REFERENCES cloud_accounts(id) ON DELETE CASCADE,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS user_settings (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS trash (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    cloud_account_id TEXT NOT NULL,
+    remote_file_id TEXT NOT NULL,
+    remote_parent_id TEXT,
+    virtual_path TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    is_folder INTEGER NOT NULL DEFAULT 0,
+    size INTEGER NOT NULL DEFAULT 0,
+    mime_type TEXT,
+    remote_created_time TEXT,
+    remote_modified_time TEXT,
+    deleted_at TEXT NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY(cloud_account_id) REFERENCES cloud_accounts(id) ON DELETE CASCADE,
+    UNIQUE(user_id, cloud_account_id, remote_file_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS share_links (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    file_id TEXT NOT NULL,
+    cloud_account_id TEXT NOT NULL,
+    remote_file_id TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    size INTEGER NOT NULL DEFAULT 0,
+    mime_type TEXT,
+    is_folder INTEGER NOT NULL DEFAULT 0,
+    token TEXT NOT NULL UNIQUE,
+    password_hash TEXT,
+    expires_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_used_at TEXT,
+    download_count INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth_sessions(user_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_accounts_user_provider_email
+    ON cloud_accounts(user_id, provider, email);
+  CREATE INDEX IF NOT EXISTS idx_cloud_accounts_user_id
+    ON cloud_accounts(user_id);
+  CREATE INDEX IF NOT EXISTS idx_file_virtual_path ON file_metadata(user_id, virtual_path);
+  CREATE INDEX IF NOT EXISTS idx_file_remote_id ON file_metadata(user_id, remote_file_id);
+  CREATE INDEX IF NOT EXISTS idx_share_links_user ON share_links(user_id);
+  CREATE INDEX IF NOT EXISTS idx_share_links_file ON share_links(file_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_file_account_remote_id
+    ON file_metadata(cloud_account_id, remote_file_id);
+  CREATE INDEX IF NOT EXISTS idx_file_user_account_id
+    ON file_metadata(user_id, cloud_account_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_user_settings_user_key
+    ON user_settings(user_id, key);
+  CREATE INDEX IF NOT EXISTS idx_trash_user_deleted_at ON trash(user_id, deleted_at);
+
+INSERT OR IGNORE INTO users (id, email, password_hash, is_local) VALUES ('local-default-user', 'local@omnicloud.local', '', 1);

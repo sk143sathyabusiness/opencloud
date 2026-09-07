@@ -1,0 +1,5 @@
+# Copy to .dev.vars for `wrangler pages dev`. Same var names as Pages env vars.
+APP_MODE=local
+OMNICLOUD_SECRET_HALF=change-me
+AUTH_SECRET=change-me
+FRONTEND_URL=http://localhost:8788

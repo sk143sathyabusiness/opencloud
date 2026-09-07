@@ -35,3 +35,7 @@ pnpm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Cloudflare
+.dev.vars
+.wrangler/

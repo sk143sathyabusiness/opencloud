@@ -9,7 +9,14 @@
     "build:web": "npm --prefix frontend run build",
     "dev:web": "npm --prefix frontend run dev -- --host",
     "dev:api": "npm --prefix backend run dev",
-    "start": "npm --prefix backend start"
+    "start": "npm --prefix backend start",
+    "web:build": "node scripts/pages-build.mjs",
+    "web:dev": "node scripts/pages-build.mjs && wrangler pages dev frontend/dist --port 8788",
+    "web:deploy": "node scripts/pages-build.mjs && wrangler pages deploy frontend/dist --branch main --project-name opencloud",
+    "web:test": "node --test \"cloudflare/tests/*.test.mjs\"",
+    "d1:create": "wrangler d1 create opencloud",
+    "d1:apply": "wrangler d1 migrations apply opencloud",
+    "d1:apply:local": "wrangler d1 migrations apply opencloud --local"
   },
   "keywords": [],
   "author": "",
@@ -21,6 +28,7 @@
     "frontend"
   ],
   "devDependencies": {
-    "npm-run-all": "^4.1.5"
+    "npm-run-all": "^4.1.5",
+    "wrangler": "^4.129.0"
   }
 }
