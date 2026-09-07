@@ -76,3 +76,32 @@ export function getTypeFilterIcon(value, filled = false) {
 	const entry = ICON_FACTORY[value] || ICON_FACTORY.all;
 	return filled ? entry.filled : entry.outline;
 }
+
+const OFFICE_EXTENSION_MAP = {
+	doc: 'document', docx: 'document', odt: 'document', rtf: 'document',
+	xls: 'spreadsheet', xlsx: 'spreadsheet', ods: 'spreadsheet',
+	ppt: 'presentation', pptx: 'presentation', odp: 'presentation',
+};
+
+export function getPreviewType(file) {
+	if (!file || file.is_folder) return null;
+	const mimeType = (file.mime_type || file.mimeType || '').toLowerCase();
+
+	if (mimeType.startsWith('image/')) return 'image';
+	if (mimeType.startsWith('video/')) return 'video';
+	if (mimeType.startsWith('audio/')) return 'audio';
+	if (mimeType === 'application/pdf') return 'pdf';
+
+	if (mimeType.includes('officedocument.wordprocessingml') || mimeType === 'application/msword') return 'document';
+	if (mimeType.includes('officedocument.spreadsheetml') || mimeType === 'application/vnd.ms-excel') return 'spreadsheet';
+	if (mimeType.includes('officedocument.presentationml') || mimeType === 'application/vnd.ms-powerpoint') return 'presentation';
+	if (mimeType.includes('opendocument.text')) return 'document';
+	if (mimeType.includes('opendocument.spreadsheet')) return 'spreadsheet';
+	if (mimeType.includes('opendocument.presentation')) return 'presentation';
+	if (mimeType === 'application/rtf') return 'document';
+
+	if (mimeType === 'application/json' || mimeType.startsWith('text/')) return 'text';
+
+	const previewType = OFFICE_EXTENSION_MAP[getFileExtension(file)];
+	return previewType || null;
+}

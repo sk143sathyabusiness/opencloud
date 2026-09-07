@@ -39,10 +39,13 @@ export function useFilePreviewModal({
 			return false;
 		}
 		isPreviewLoading.value = true;
+		const sourceName = file.display_name || file.file_name || '';
+		const nameParts = sourceName.split('.');
 		previewFile.value = {
 			...file,
 			previewType: previewTypeOf(file),
 			previewUrl: buildPreviewUrl(file),
+			extension: nameParts.length > 1 ? nameParts.at(-1).toLowerCase() : '',
 		};
 		isPreviewOpen.value = true;
 		return true;

@@ -420,7 +420,11 @@
 		"loading": "Loading preview...",
 		"notAvailable": "Preview is not available for this file type.",
 		"document": "Document preview",
-		"failed": "Preview failed to load. Some provider files are not compatible with lightweight preview."
+		"failed": "Preview failed to load. Some provider files are not compatible with lightweight preview.",
+		"slide": "Slide {n}",
+		"noContent": "This slide has no readable content.",
+		"truncated": "Preview truncated to {limit}.",
+		"notRendered": "This file type can't be rendered in the built-in preview. Download it instead."
 	},
 	"telegram": {
 		"title": "Telegram Backup",

@@ -4,7 +4,7 @@ import { providerLabel } from './useFormatFile.js';
 import { useFileFiltersUi } from './useFileFiltersUi.js';
 import { useFileActions } from './useFileActions.js';
 import { useFileActionProgress } from './useFileActionProgress.js';
-import { getFileCategory } from './useFileType.js';
+import { getFileCategory, getPreviewType as getPreviewTypeForFile } from './useFileType.js';
 import { matchesUpdatedFilter } from './useFileFilters.js';
 
 export function useFileListView({
@@ -185,7 +185,7 @@ export function useFileListView({
 		getFileCategory,
 		uploadQueueStore,
 		refresh,
-		getPreviewType,
+		getPreviewType: getPreviewType || getPreviewTypeForFile,
 		previewUnsupportedMessage,
 		onProgress: actionProgress.runWithProgress,
 	});

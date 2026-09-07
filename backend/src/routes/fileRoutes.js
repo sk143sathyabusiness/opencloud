@@ -5,6 +5,7 @@ import { createAdapter } from '../services/adapterRegistry.js';
 import { selectBestAccount } from '../services/spaceAllocator.js';
 import { syncAccount } from '../services/syncService.js';
 import { requireAppUser } from '../middleware/authMiddleware.js';
+import { guessMimeType, isPreviewableMime } from '../utils/mime.js';
 
 const router = Router();
 
@@ -314,10 +315,8 @@ router.get('/files/:id/preview', async (req, res, next) => {
 			return res.status(400).json({ error: 'Folder preview is not supported' });
 		}
 
-		const mimeType = context.file.mime_type || 'application/octet-stream';
-		const isPreviewable = /^(image|video|audio|text)\//.test(mimeType)
-			|| mimeType === 'application/pdf'
-			|| mimeType === 'application/json';
+		const mimeType = context.file.mime_type || guessMimeType(context.file.file_name);
+		const isPreviewable = isPreviewableMime(mimeType, context.file.file_name);
 
 		if (!isPreviewable) {
 			return res.status(415).json({ error: 'Preview is not supported for this file type' });

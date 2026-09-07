@@ -421,7 +421,11 @@
 		"loading": "Memuat preview...",
 		"notAvailable": "Preview belum tersedia untuk tipe file ini.",
 		"document": "Preview dokumen",
-		"failed": "Preview gagal dimuat. Beberapa file provider memang tidak kompatibel untuk preview ringan."
+		"failed": "Preview gagal dimuat. Beberapa file provider memang tidak kompatibel untuk preview ringan.",
+		"slide": "Slide {n}",
+		"noContent": "Slide ini tidak memiliki konten yang dapat dibaca.",
+		"truncated": "Preview dipotong hingga {limit}.",
+		"notRendered": "Tipe file ini tidak dapat dirender di preview bawaan. Unduh sebagai gantinya."
 	},
 	"telegram": {
 		"title": "Cadangan Telegram",
