@@ -16,6 +16,7 @@ async function request(path, options = {}) {
 		const payload = await response.json().catch(() => ({ error: 'Unknown API error' }));
 		const error = new Error(payload.error || 'API request failed');
 		error.status = response.status;
+		error.data = payload.data;
 		throw error;
 	}
 

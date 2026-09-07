@@ -202,14 +202,24 @@ const accountLegends = computed(() =>
 		const used = Math.max(0, Number(account.used_space || 0));
 		const total = Math.max(0, Number(account.total_space || 0));
 		const free = Math.max(0, total - used);
+		const ratio = total > 0 ? used / total : 1;
+		const state = ratio >= 1 ? 'full' : ratio >= 0.85 ? 'almost-full' : 'ok';
 		return {
 			...account,
 			used,
 			free,
+			ratio,
+			state,
 			palette: accountPalette[index % accountPalette.length],
 		};
 	}),
 );
+
+function quotaBarClass(account) {
+	if (account.state === 'full') return 'bg-red-500';
+	if (account.state === 'almost-full') return 'bg-amber-400';
+	return account.palette.used;
+}
 
 function providerBadgeClass(status) {
 	return status === 'active'
@@ -699,14 +709,20 @@ onMounted(async () => {
 
 						<div class="mt-4 h-3 overflow-hidden rounded-full bg-[#eef2f7] dark:bg-slate-700">
 							<div class="flex h-full w-full overflow-hidden rounded-full">
-								<div class="h-full" :class="account.palette.used" :style="{ width: `${account.total_space ? Math.min(100, (account.used / account.total_space) * 100) : 0}%` }" />
-								<div class="h-full" :class="account.palette.free" :style="{ width: `${account.total_space ? Math.min(100, (account.free / account.total_space) * 100) : 0}%` }" />
+								<div class="h-full" :class="quotaBarClass(account)" :style="{ width: `${account.total_space ? Math.min(100, (account.used / account.total_space) * 100) : 0}%` }" />
+								<div v-if="account.state === 'ok'" class="h-full" :class="account.palette.free" :style="{ width: `${account.total_space ? Math.min(100, (account.free / account.total_space) * 100) : 0}%` }" />
 							</div>
 						</div>
 
 						<div class="mt-3 flex items-center justify-between gap-3 text-sm">
 							<span class="text-[#5f6368] dark:text-slate-400">{{ formatBytesStrict(account.used) }} / {{ formatBytesStrict(account.total_space) }}</span>
 							<span class="font-medium" :class="account.palette.text">{{ formatBytesStrict(account.free) }} {{ t('storage.empty') }}</span>
+						</div>
+
+						<div v-if="account.state !== 'ok'" class="mt-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold capitalize" :class="account.state === 'full'
+							? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300'
+							: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'">
+							{{ t(account.state === 'full' ? 'quota.full' : 'quota.almostFull') }}
 						</div>
 
 						<div class="mt-4 flex items-center justify-between gap-3">

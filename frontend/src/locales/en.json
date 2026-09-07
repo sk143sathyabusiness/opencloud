@@ -192,7 +192,12 @@
 		"lastSync": "Last sync: {date}",
 		"disconnectAccount": "Disconnect account",
 		"disconnectConfirm": "Disconnect {email}?",
-		"disconnectConfirmDesc": "Account will be removed from OmniCloud but data in the original cloud remains safe."
+		"disconnectConfirmDesc": "Account will be removed from OmniCloud but data in the original cloud remains safe.",
+		"full": "Full",
+		"almostFull": "Almost full",
+		"freeSpace": "of {total} used",
+		"blocked": "Storage limit reached",
+		"blockedBody": "The selected account does not have enough free space."
 	},
 	"providers": {
 		"googleDrive": "Google Drive",

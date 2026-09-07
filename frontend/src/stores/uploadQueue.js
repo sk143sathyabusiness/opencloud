@@ -317,6 +317,12 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 						continue;
 					}
 
+					if (error.status === 507 && Array.isArray(error.data?.perAccount)) {
+						error.message = `${error.message}\n${error.data.perAccount
+							.map((a) => `${a.provider} (${a.email}): ${a.freeBytes} bytes free`)
+							.join('\n')}`;
+					}
+
 					this.updateUpload(queueItem.id, {
 						status: 'failed',
 						error: error.message,

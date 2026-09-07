@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAppUser } from '../middleware/authMiddleware.js';
-import { selectBestAccount } from '../services/spaceAllocator.js';
+import { selectBestAccount, toFreeSpaceView } from '../services/spaceAllocator.js';
+import { env } from '../config/env.js';
 import { createUploadSession } from '../services/uploadSessionService.js';
 import { handleUpload } from '../services/uploadService.js';
 
@@ -16,6 +17,28 @@ router.post('/uploads/initiate', (req, res) => {
 	}
 
 	const allocation = selectBestAccount(req.user.id, Number(size));
+	const requiredBytes = Number(size) || 0;
+	const selectedView = toFreeSpaceView(allocation.selected);
+
+	if (requiredBytes > selectedView.freeSpace && env.quotaHardLimitEnabled) {
+		const perAccount = [allocation.selected, ...allocation.fallbackChain].map((account) => {
+			const view = toFreeSpaceView(account);
+			return {
+				id: view.id,
+				provider: view.provider,
+				email: view.email,
+				totalBytes: Number(view.total_space || 0),
+				usedBytes: Number(view.used_space || 0),
+				freeBytes: view.freeSpace,
+				soft: view.usedRatio >= 0.85,
+			};
+		});
+		return res.status(507).json({
+			error: 'Insufficient storage available — free some space or connect another account',
+			data: { perAccount },
+		});
+	}
+
 	const session = createUploadSession({
 		user_id: req.user.id,
 		file_name,

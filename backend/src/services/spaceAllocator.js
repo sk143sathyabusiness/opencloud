@@ -7,7 +7,7 @@ import {
 	setSwrrState,
 } from './allocationService.js';
 
-function withFreeSpace(account) {
+export function toFreeSpaceView(account) {
 	const total = Number(account.total_space) || 0;
 	const used = Number(account.used_space) || 0;
 	return {
@@ -15,6 +15,15 @@ function withFreeSpace(account) {
 		freeSpace: Math.max(0, total - used),
 		usedRatio: total > 0 ? used / total : 1,
 	};
+}
+
+export function isAlmostFull(account) {
+	const view = toFreeSpaceView(account);
+	return view.freeSpace > 0 && view.usedRatio >= 0.85;
+}
+
+export function isFull(account) {
+	return toFreeSpaceView(account).freeSpace <= 0;
 }
 
 function buildResult(selected, allAccounts) {
@@ -97,7 +106,7 @@ function selectManual(accounts, requiredBytes) {
 export function selectBestAccount(userId, requiredBytes = 0) {
 	const required = Number(requiredBytes) || 0;
 	const { strategy } = getAllocationConfig(userId);
-	const accounts = getOrderedActiveAccounts(userId).map(withFreeSpace);
+	const accounts = getOrderedActiveAccounts(userId).map(toFreeSpaceView);
 
 	if (!accounts.length) {
 		throw new Error('No active cloud account available');

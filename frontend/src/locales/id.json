@@ -193,7 +193,12 @@
 		"lastSync": "Sinkronisasi terakhir: {date}",
 		"disconnectAccount": "Putuskan akun",
 		"disconnectConfirm": "Putuskan akun {email}?",
-		"disconnectConfirmDesc": "Akun akan dihapus dari OmniCloud tapi data di cloud asli tetap aman."
+		"disconnectConfirmDesc": "Akun akan dihapus dari OmniCloud tapi data di cloud asli tetap aman.",
+		"full": "Penuh",
+		"almostFull": "Hampir penuh",
+		"freeSpace": "dari {total} terpakai",
+		"blocked": "Batas penyimpanan tercapai",
+		"blockedBody": "Akun yang dipilih tidak memiliki ruang kosong yang cukup."
 	},
 	"providers": {
 		"googleDrive": "Google Drive",
