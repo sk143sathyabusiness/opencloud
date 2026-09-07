@@ -283,6 +283,12 @@ npm run dev
 
 ---
 
+## ☁️ Cloudflare Pages
+
+Single-project deployment (SPA + API same origin, D1-backed). See [`docs/cloudflare.md`](docs/cloudflare.md) for env vars, local dev, and deploy steps.
+
+---
+
 ## 🐳 Docker Setup
 
 Run the API and the production frontend (behind Nginx) with Docker Compose.
