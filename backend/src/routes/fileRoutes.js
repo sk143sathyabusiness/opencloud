@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { listFilesByPath, getFileById, getFileByRemoteId, listRecentFiles, listStarredFiles, searchFiles, setFileStarred, updateFileStarredByRemoteId } from '../services/fileService.js';
+import { listFilesByPath, getFileById, getFileByRemoteId, listRecentFiles, listStarredFiles, searchFiles, setFileStarred, updateFileStarredByRemoteId, getFolderByPath } from '../services/fileService.js';
 import { getAccountById, getActiveAccounts } from '../services/accountService.js';
 import { createAdapter } from '../services/adapterRegistry.js';
 import { selectBestAccount } from '../services/spaceAllocator.js';
@@ -295,6 +295,124 @@ router.delete('/files/trash/all', async (req, res, next) => {
 		const rows = listTrashedFiles(req.user.id);
 		const result = await permanentlyDeleteRows(req.user.id, rows);
 		return res.json({ data: { success: true, permanentlyDeleted: result.count, errors: result.errors } });
+	} catch (error) {
+		next(error);
+	}
+});
+
+function resolveDestination(userId, destinationPath) {
+	const folder = getFolderByPath(userId, destinationPath);
+	if (!folder) {
+		const { selected } = selectBestAccount(userId, 0);
+		return { accountId: selected.id, parentId: null };
+	}
+	return { accountId: folder.cloud_account_id, parentId: folder.remote_file_id };
+}
+
+async function performTransfer(userId, context, destinationPath, mode) {
+	const target = resolveDestination(userId, destinationPath);
+	const sameAccount = target.accountId === context.file.cloud_account_id;
+	const targetAccount = getAccountById(userId, target.accountId);
+	if (!targetAccount) {
+		const err = new Error('Destination account is unavailable');
+		err.status = 400;
+		throw err;
+	}
+
+	if (mode === 'move' && sameAccount) {
+		await context.adapter.moveFile(context.file, target.parentId);
+		await syncAccount(userId, context.account);
+		return { moved: 1 };
+	}
+
+	const stream = await context.adapter.getDownloadStream(context.file);
+	const targetAdapter = sameAccount
+		? context.adapter
+		: createAdapter(targetAccount);
+	await targetAdapter.uploadStream({
+		stream,
+		size: Number(context.file.size || 0),
+		fileName: context.file.file_name,
+		mimeType: context.file.mime_type || 'application/octet-stream',
+		virtualPath: context.file.virtual_path,
+		remoteParentId: target.parentId,
+	});
+
+	if (mode === 'move') {
+		await context.adapter.deleteFile(context.file);
+		await syncAccount(userId, context.account);
+	}
+	await syncAccount(userId, targetAccount);
+	return mode === 'move' ? { moved: 1 } : { copied: 1 };
+}
+
+router.post('/files/:id/move', async (req, res, next) => {
+	try {
+		const context = await getFileContext(req.user.id, req.params.id);
+		if (!ensureFileContext(context, res)) return;
+		const { destinationPath } = req.body;
+		if (!destinationPath?.trim()) return res.status(400).json({ error: 'destinationPath is required' });
+		const result = await performTransfer(req.user.id, context, destinationPath, 'move');
+		return res.json({ data: result });
+	} catch (error) {
+		next(error);
+	}
+});
+
+router.post('/files/:id/copy', async (req, res, next) => {
+	try {
+		const context = await getFileContext(req.user.id, req.params.id);
+		if (!ensureFileContext(context, res)) return;
+		const { destinationPath } = req.body;
+		if (!destinationPath?.trim()) return res.status(400).json({ error: 'destinationPath is required' });
+		const result = await performTransfer(req.user.id, context, destinationPath, 'copy');
+		return res.json({ data: result });
+	} catch (error) {
+		next(error);
+	}
+});
+
+router.post('/files/bulk/move', async (req, res, next) => {
+	try {
+		const { ids, destinationPath } = req.body;
+		if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids are required' });
+		if (!destinationPath?.trim()) return res.status(400).json({ error: 'destinationPath is required' });
+		const errors = [];
+		let moved = 0;
+		for (const id of [...new Set(ids)]) {
+			try {
+				const context = await getFileContext(req.user.id, id);
+				if (!context.file) { errors.push({ id, error: 'File not found' }); continue; }
+				const result = await performTransfer(req.user.id, context, destinationPath, 'move');
+				moved += result.moved;
+			} catch (error) {
+				errors.push({ id, error: error.message });
+			}
+		}
+		return res.json({ data: { success: true, moved, errors } });
+	} catch (error) {
+		next(error);
+	}
+});
+
+router.post('/files/bulk/copy', async (req, res, next) => {
+	try {
+		const { ids, destinationPath } = req.body;
+		if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids are required' });
+		if (!destinationPath?.trim()) return res.status(400).json({ error: 'destinationPath is required' });
+		const errors = [];
+		let copied = 0;
+		for (const id of [...new Set(ids)]) {
+			try {
+				const context = await getFileContext(req.user.id, id);
+				if (!context.file) { errors.push({ id, error: 'File not found' }); continue; }
+				const result = await performTransfer(req.user.id, context, destinationPath, 'copy');
+				copied += result.copied;
+			} catch (error) {
+				errors.push({ id, error: error.message });
+			}
+		}
+		return res.json({ data: { success: true, copied, errors } });
 	} catch (error) {
 		next(error);
 	}

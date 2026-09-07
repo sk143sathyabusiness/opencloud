@@ -11,7 +11,28 @@ export class BaseCloudAdapter {
 			starred: false,
 			rename: true,
 			delete: true,
+			move: true,
+			copy: true,
 		};
+	}
+
+	async copyFile(file, destinationParentId, destinationAccount) {
+		const target = destinationAccount || this;
+		const stream = await this.getDownloadStream(file);
+		return target.uploadStream({
+			stream,
+			size: Number(file.size || 0),
+			fileName: file.file_name,
+			mimeType: file.mime_type || 'application/octet-stream',
+			virtualPath: file.virtual_path,
+			remoteParentId: destinationParentId || null,
+		});
+	}
+
+	async moveFile(file, destinationParentId, destinationAccount) {
+		const copied = await this.copyFile(file, destinationParentId, destinationAccount);
+		await this.deleteFile(file);
+		return copied;
 	}
 
 	async fetchStructure() {
@@ -31,7 +52,9 @@ export class BaseCloudAdapter {
 		return new Transform({
 			transform(chunk, _encoding, callback) {
 				bytes += chunk.length;
-				onProgress(bytes);
+				if (typeof onProgress === 'function') {
+					onProgress(bytes);
+				}
 				callback(null, chunk);
 			},
 		});

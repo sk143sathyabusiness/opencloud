@@ -8,6 +8,26 @@ function normalizePath(input = '/') {
 	return cleaned.endsWith('/') ? cleaned : `${cleaned}/`;
 }
 
+function joinPath(parentPath, name) {
+	const base = parentPath === '/' || !parentPath ? '/' : parentPath;
+	const clean = base.endsWith('/') ? base : `${base}/`;
+	return `${clean}${String(name).replace(/^\/+/, '')}`;
+}
+
+export function getFolderByPath(userId, virtualPath) {
+	const target = normalizePath(virtualPath);
+	if (target === '/') return null;
+	const rows = listAllFiles(userId);
+	return rows.find(
+		(row) => row.is_folder === 1 && normalizePath(joinPath(row.virtual_path, row.file_name)) === target,
+	) || null;
+}
+
+export function getDescendants(rows, rootRow) {
+	const folderPath = normalizePath(joinPath(rootRow.virtual_path, rootRow.file_name));
+	return rows.filter((row) => row.virtual_path.startsWith(folderPath));
+}
+
 function buildDisplayNames(rows) {
 	return rows.map((row) => ({
 		...row,
