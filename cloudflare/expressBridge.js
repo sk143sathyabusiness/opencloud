@@ -40,7 +40,7 @@ function parseCookies(header = '') {
 export function createBridgeRequest(request, user) {
 	const url = new URL(request.url);
 	const headers = Object.fromEntries(request.headers.entries());
-	return {
+	const bridgeReq = {
 		method: request.method,
 		url: url.pathname + url.search,
 		path: url.pathname,
@@ -52,7 +52,9 @@ export function createBridgeRequest(request, user) {
 		cookies: parseCookies(headers.cookie),
 		user,
 		_webRequest: request,
+		get req() { return this; },
 	};
+	return bridgeReq;
 }
 
 export async function runExpress(app, request, { user } = {}) {
@@ -64,7 +66,10 @@ export async function runExpress(app, request, { user } = {}) {
 		res.status(500).json({ error: err?.message || 'Internal server error' });
 	}
 	if (!res.finished) {
-		await new Promise((resolve) => res.once('finish', resolve));
+		await Promise.race([
+			new Promise((resolve) => res.once('finish', resolve)),
+			new Promise((_, reject) => setTimeout(() => reject(new Error('Response timeout')), 30000)),
+		]);
 	}
 	const body = res._chunks.length ? Buffer.concat(res._chunks) : null;
 	return new Response(body, { status: res.statusCode, headers: res._headers });
