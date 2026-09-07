@@ -169,3 +169,19 @@ npm test
 | `cloudflare/expressBridge.js` | `Request/Response → Express req/res` adapter |
 | `cloudflare/db.js` | `envStore` (AsyncLocalStorage) + `D1Compat` async statement API |
 | `scripts/pages-build.mjs` | Build script (vite + worker copy) |
+
+---
+
+## Known Gaps (SP-1 handoff)
+
+These are deferred to subsequent sub-projects:
+
+- **Full route surface (SP-2):** Only `/api/health`, `/api/files`, `/api/share/:token/info` are mounted. Auth, accounts, uploads, settings, allocation, sync — all come in SP-2 when the full `createApp()` is ported.
+- **WebSocket upload progress (SP-2+):** WS `/ws/uploads` not yet wired. Poll-based fallback documented in spec.
+- **Chunked >100MB uploads (SP-2+):** Large-file streaming upload support deferred.
+- **Provider adapters (SP-4):** Google Drive, OneDrive, Dropbox, Yandex, MEGA, pCloud, S3 — all ported in SP-4.
+- **OAuth flow (SP-4):** OAuth redirect handling and token storage.
+- **Cron sync (SP-5):** `node-cron` → Cloudflare Cron Triggers.
+- **Telegram integration (SP-5):** Bot token handling and file sync.
+- **MEGA/pCloud provider port (SP-6):** Email/password account connections.
+- **Vitest pool (SP-2):** Tests migrate from direct Miniflare API to `@cloudflare/vitest-pool-workers`.
