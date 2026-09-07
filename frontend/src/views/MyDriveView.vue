@@ -92,6 +92,8 @@ const {
 	isDetailsOpen,
 	closeDetails,
 	downloadSelection,
+	canZipDownloadSelection,
+	downloadSelectionAsZip,
 	renameSelectedFile,
 	deleteSelectedFile,
 	toggleSelectedFileStar,
@@ -403,7 +405,7 @@ onBeforeUnmount(() => {
 			</div>
 
 			<div class="mb-3 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-				<FileListSelectionBar v-if="selectedCount" :selected-count="selectedCount" :can-preview="canPreviewSelection" :can-toggle-star="canToggleStarSelection" :is-primary-starred="isPrimarySelectedStarred" :can-download="canDownloadSelection" :can-rename="canRenameSelection" :primary-file="primarySelectedFile" @clear="clearSelection" @preview="openPreview" @toggle-star="toggleSelectedFileStar" @download="downloadSelection" @rename="renameSelectedFile" @show-details="showSelectedFileDetails" @delete="deleteSelectedFile">
+				<FileListSelectionBar v-if="selectedCount" :selected-count="selectedCount" :can-preview="canPreviewSelection" :can-toggle-star="canToggleStarSelection" :is-primary-starred="isPrimarySelectedStarred" :can-download="canDownloadSelection" :can-rename="canRenameSelection" :can-zip-download="canZipDownloadSelection" :primary-file="primarySelectedFile" @clear="clearSelection" @preview="openPreview" @toggle-star="toggleSelectedFileStar" @download="downloadSelection" @download-zip="downloadSelectionAsZip" @rename="renameSelectedFile" @show-details="showSelectedFileDetails" @delete="deleteSelectedFile">
 					<template #prefix="{ primary }">
 						<button v-if="primary?.is_folder && selectedCount === 1" type="button" class="inline-flex size-9 items-center justify-center rounded-full transition enabled:hover:bg-[#d2e3fc] dark:enabled:hover:bg-sky-500/20" :title="t('common.open')" @click="openSelectedItem">
 							<IconFolder :size="18" :stroke="2" />

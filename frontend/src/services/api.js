@@ -226,6 +226,17 @@ export const api = {
 	downloadUrl(fileId) {
 		return `${API_BASE_URL}/files/${fileId}/download`;
 	},
+	bulkDownloadUrl() {
+		return `${API_BASE_URL}/files/bulk/download`;
+	},
+	async bulkDownload(ids) {
+		return fetch(this.bulkDownloadUrl(), {
+			method: 'POST',
+			credentials: 'include',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ ids }),
+		});
+	},
 	previewUrl(fileId) {
 		return `${API_BASE_URL}/files/${fileId}/preview`;
 	},

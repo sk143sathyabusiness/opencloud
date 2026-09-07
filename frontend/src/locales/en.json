@@ -441,6 +441,13 @@
 		"notConfigured": "Telegram is not configured.",
 		"notConfiguredHint": "Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in backend/.env, then verify the connection."
 	},
+	"download": {
+		"zipLabel": "Download (.zip)",
+		"preparingZip": "Preparing ZIP archive…",
+		"zipReady": "Archive ready",
+		"zipFailed": "Could not create the ZIP archive.",
+		"zipNote": "Large selections may take a moment."
+	},
 	"trash": {
 		"title": "Trash",
 		"empty": "Trash is empty",

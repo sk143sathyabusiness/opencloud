@@ -442,6 +442,13 @@
 		"notConfigured": "Telegram belum dikonfigurasi.",
 		"notConfiguredHint": "Atur TELEGRAM_BOT_TOKEN dan TELEGRAM_CHAT_ID di backend/.env, lalu verifikasi koneksi."
 	},
+	"download": {
+		"zipLabel": "Unduh (.zip)",
+		"preparingZip": "Menyiapkan arsip ZIP…",
+		"zipReady": "Arsip siap",
+		"zipFailed": "Gagal membuat arsip ZIP.",
+		"zipNote": "Pilihan dalam jumlah besar mungkin memerlukan waktu."
+	},
 	"trash": {
 		"title": "Sampah",
 		"empty": "Sampah kosong",

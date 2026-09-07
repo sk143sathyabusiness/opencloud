@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { listFilesByPath, getFileById, getFileByRemoteId, listRecentFiles, listStarredFiles, searchFiles, setFileStarred, updateFileStarredByRemoteId, getFolderByPath } from '../services/fileService.js';
+import { ZipArchive } from 'archiver';
+import { listFilesByPath, getFileById, getFileByRemoteId, listRecentFiles, listStarredFiles, searchFiles, setFileStarred, updateFileStarredByRemoteId, getFolderByPath, listAllFiles, getDescendants } from '../services/fileService.js';
 import { getAccountById, getActiveAccounts } from '../services/accountService.js';
 import { createAdapter } from '../services/adapterRegistry.js';
 import { selectBestAccount } from '../services/spaceAllocator.js';
@@ -259,6 +260,95 @@ router.post('/files/bulk/delete', async (req, res, next) => {
 		const result = softDeleteFilesByIds(req.user.id, ids);
 
 		return res.json({ data: { success: true, deleted: result.trashed } });
+	} catch (error) {
+		next(error);
+	}
+});
+
+function collectZipEntries(userId, rootIds) {
+	const all = listAllFiles(userId);
+	const byId = new Map(all.map((row) => [row.id, row]));
+	const resolved = [...new Set(rootIds || [])].map((id) => byId.get(id));
+	if (resolved.some((row) => !row)) {
+		const err = new Error('One or more requested files were not found');
+		err.status = 400;
+		throw err;
+	}
+	const entries = [];
+	const seen = new Set();
+	for (const root of resolved) {
+		const leaves = root.is_folder ? [root, ...getDescendants(all, root)] : [root];
+		for (const leaf of leaves) {
+			const key = `${leaf.cloud_account_id}:${leaf.remote_file_id}`;
+			if (seen.has(key)) continue;
+			seen.add(key);
+			const rel = leaf.virtual_path === '/'
+				? leaf.file_name
+				: `${leaf.virtual_path.replace(/^\//, '')}${leaf.file_name}`;
+			entries.push({ ...leaf, relPath: rel.replace(/^\/+/, '') });
+		}
+	}
+	return entries;
+}
+
+function sanitizeZipName(raw, usedNames) {
+	let cleaned = String(raw || 'untitled')
+		.replace(/\\/g, '/')
+		.replace(/^\/+/, '')
+		.split('/')
+		.map((part) => part.replace(/\.\./g, '_').replace(/[<>:"|?*]/g, '_').trim() || '_')
+		.filter(Boolean)
+		.join('/');
+	if (!cleaned) cleaned = 'untitled';
+	const base = cleaned.replace(/(\.\w+)?$/, '');
+	const ext = cleaned.match(/\.\w+$/) ? cleaned.match(/\.\w+$/)[0] : '';
+	let candidate = cleaned;
+	let i = 2;
+	while (usedNames.has(candidate)) {
+		candidate = `${base} (${i})${ext}`;
+		i += 1;
+	}
+	usedNames.add(candidate);
+	return candidate;
+}
+
+router.post('/files/bulk/download', async (req, res, next) => {
+	try {
+		const { ids } = req.body;
+		if (!Array.isArray(ids) || !ids.length) {
+			return res.status(400).json({ error: 'ids are required' });
+		}
+		const entries = collectZipEntries(req.user.id, ids);
+
+		res.setHeader('Content-Type', 'application/zip');
+		res.setHeader('Content-Disposition', 'attachment; filename="omnicloud-download.zip"');
+
+		const archive = new ZipArchive({ zlib: { level: 9 } });
+		archive.on('error', () => res.end());
+		archive.pipe(res);
+
+		const errors = [];
+		const usedNames = new Set();
+		for (const entry of entries) {
+			if (entry.is_folder) continue;
+			const name = sanitizeZipName(entry.relPath, usedNames);
+			try {
+				const account = getAccountById(req.user.id, entry.cloud_account_id);
+				if (!account) {
+					errors.push(entry.file_name);
+					continue;
+				}
+				const adapter = createAdapter(account);
+				const stream = await adapter.getDownloadStream(entry);
+				archive.append(stream, { name });
+			} catch {
+				errors.push(entry.file_name);
+			}
+		}
+		if (errors.length) {
+			archive.append(Buffer.from(`The following files could not be downloaded:\n${errors.join('\n')}\n`), { name: 'errors.txt' });
+		}
+		archive.finalize();
 	} catch (error) {
 		next(error);
 	}

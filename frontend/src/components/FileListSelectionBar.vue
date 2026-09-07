@@ -1,5 +1,5 @@
 <script setup>
-import { IconX, IconEye, IconStar, IconStarFilled, IconDownload, IconEdit, IconInfoCircle, IconTrash } from '@tabler/icons-vue';
+import { IconX, IconEye, IconStar, IconStarFilled, IconDownload, IconEdit, IconInfoCircle, IconTrash, IconZip } from '@tabler/icons-vue';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
@@ -13,6 +13,7 @@ const props = defineProps({
 	canRename: { type: Boolean, default: false },
 	canShowDetails: { type: Boolean, default: true },
 	canDelete: { type: Boolean, default: true },
+	canZipDownload: { type: Boolean, default: false },
 	primaryFile: { type: Object, default: null },
 });
 
@@ -24,6 +25,7 @@ const emit = defineEmits([
 	'rename',
 	'show-details',
 	'delete',
+	'download-zip',
 ]);
 </script>
 
@@ -46,6 +48,10 @@ const emit = defineEmits([
 
 		<button type="button" class="inline-flex size-9 items-center justify-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-45 enabled:hover:bg-[#d2e3fc] dark:enabled:hover:bg-sky-500/20" :title="t('common.download')" :disabled="!canDownload" @click="emit('download')">
 			<IconDownload :size="18" :stroke="2" />
+		</button>
+
+		<button v-if="canZipDownload" type="button" class="inline-flex size-9 items-center justify-center rounded-full transition enabled:hover:bg-[#d2e3fc] dark:enabled:hover:bg-sky-500/20" :title="t('download.zipLabel')" @click="emit('download-zip')">
+			<IconZip :size="18" :stroke="2" />
 		</button>
 
 		<button type="button" class="inline-flex size-9 items-center justify-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-45 enabled:hover:bg-[#d2e3fc] dark:enabled:hover:bg-sky-500/20" :title="t('common.rename')" :disabled="!canRename" @click="emit('rename')">

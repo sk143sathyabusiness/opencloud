@@ -194,6 +194,36 @@ export function useFileActions({
 		});
 	}
 
+	const canZipDownloadSelection = computed(
+		() => selectedFiles.value.length > 0
+			|| (contextMenu.value.file && contextMenu.value.file.is_folder),
+	);
+
+	async function downloadSelectionAsZip() {
+		const targets = getActionFiles();
+		if (!targets.length) return;
+		closeContextMenu();
+		errorRef.value = '';
+		try {
+			const response = await api.bulkDownload(targets.map((file) => file.id));
+			if (!response.ok) {
+				const payload = await response.json().catch(() => ({ error: 'ZIP download failed' }));
+				throw new Error(payload.error || 'ZIP download failed');
+			}
+			const blob = await response.blob();
+			const url = URL.createObjectURL(blob);
+			const anchor = document.createElement('a');
+			anchor.href = url;
+			anchor.download = 'omnicloud-download.zip';
+			document.body.appendChild(anchor);
+			anchor.click();
+			anchor.remove();
+			URL.revokeObjectURL(url);
+		} catch (error) {
+			errorRef.value = error.message;
+		}
+	}
+
 	function triggerDownload(file) {
 		closeContextMenu();
 		if (file?.is_folder) return;
@@ -249,6 +279,8 @@ export function useFileActions({
 		deleteSelectedFile,
 		downloadSelection,
 		triggerDownload,
+		canZipDownloadSelection,
+		downloadSelectionAsZip,
 		toggleSelectedFileStar,
 		showSelectedFileDetails,
 		canDownloadSelection,
