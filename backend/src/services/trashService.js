@@ -132,3 +132,7 @@ export function getExpiredTrashRows(userId, cutoffIso) {
 		.prepare('SELECT * FROM trash WHERE user_id = ? AND deleted_at < ?')
 		.all(userId, cutoffIso);
 }
+
+export function getTrashUserIds() {
+	return db.prepare('SELECT DISTINCT user_id FROM trash').all().map((row) => row.user_id);
+}

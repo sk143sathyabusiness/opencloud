@@ -4,6 +4,7 @@ import { getAccountById, getActiveAccounts } from '../services/accountService.js
 import { createAdapter } from '../services/adapterRegistry.js';
 import { selectBestAccount } from '../services/spaceAllocator.js';
 import { syncAccount } from '../services/syncService.js';
+import { listTrashedFiles, restoreTrashedFiles, getTrashedRowsByIds, removeTrashedRows, softDeleteFilesByIds } from '../services/trashService.js';
 import { requireAppUser } from '../middleware/authMiddleware.js';
 import { guessMimeType, isPreviewableMime } from '../utils/mime.js';
 
@@ -134,13 +135,27 @@ function ensureFileContext(context, res) {
 	return true;
 }
 
-async function deleteContextFile(userId, context, rawId = context?.file?.id, options = {}) {
-	const { sync = true } = options;
-	await context.adapter.deleteFile(context.file);
-
-	if (sync && context.account) {
-		await syncAccount(userId, context.account);
+async function permanentlyDeleteRows(userId, rows) {
+	const errors = [];
+	for (const row of rows) {
+		const account = getAccountById(userId, row.cloud_account_id);
+		try {
+			if (account) {
+				const adapter = createAdapter(account);
+				await adapter.deleteFile({
+					remote_file_id: row.remote_file_id,
+					remote_parent_id: row.remote_parent_id,
+					file_name: row.file_name,
+					virtual_path: row.virtual_path,
+					is_folder: Boolean(row.is_folder),
+				});
+			}
+		} catch (error) {
+			errors.push({ id: row.id, file_name: row.file_name, error: error.message });
+		}
 	}
+	removeTrashedRows(userId, rows.map((row) => row.id));
+	return { count: rows.length, errors };
 }
 
 async function listSharedWithMeFiles(userId) {
@@ -241,26 +256,45 @@ router.post('/files/bulk/delete', async (req, res, next) => {
 			return res.status(400).json({ error: 'At least one file id is required' });
 		}
 
-		const contexts = await Promise.all(ids.map(async (id) => ({ id, ...await getFileContext(req.user.id, id) })));
-		const invalid = contexts.find((context) => !context.file || !context.account || context.account.status !== 'active' || !context.adapter);
-		if (invalid) {
-			return res.status(invalid.file ? 409 : 404).json({ error: invalid.file ? 'One or more file accounts are no longer connected' : 'One or more files were not found' });
-		}
+		const result = softDeleteFilesByIds(req.user.id, ids);
 
-		const touchedAccountIds = new Set();
-		for (const context of contexts) {
-			await deleteContextFile(req.user.id, context, context.id, { sync: false });
-			touchedAccountIds.add(context.account.id);
-		}
+		return res.json({ data: { success: true, deleted: result.trashed } });
+	} catch (error) {
+		next(error);
+	}
+});
 
-		for (const accountId of touchedAccountIds) {
-			const account = getAccountById(req.user.id, accountId);
-			if (account) {
-				await syncAccount(req.user.id, account);
-			}
-		}
+router.get('/files/trash', (req, res) => {
+	return res.json({ data: listTrashedFiles(req.user.id) });
+});
 
-		return res.json({ data: { success: true, count: contexts.length } });
+router.post('/files/trash/restore', (req, res) => {
+	const { ids } = req.body;
+	if (!Array.isArray(ids) || !ids.length) {
+		return res.status(400).json({ error: 'ids are required' });
+	}
+	return res.json({ data: restoreTrashedFiles(req.user.id, ids) });
+});
+
+router.delete('/files/trash', async (req, res, next) => {
+	try {
+		const { ids } = req.body;
+		if (!Array.isArray(ids) || !ids.length) {
+			return res.status(400).json({ error: 'ids are required' });
+		}
+		const rows = getTrashedRowsByIds(req.user.id, ids);
+		const result = await permanentlyDeleteRows(req.user.id, rows);
+		return res.json({ data: { success: true, permanentlyDeleted: result.count, errors: result.errors } });
+	} catch (error) {
+		next(error);
+	}
+});
+
+router.delete('/files/trash/all', async (req, res, next) => {
+	try {
+		const rows = listTrashedFiles(req.user.id);
+		const result = await permanentlyDeleteRows(req.user.id, rows);
+		return res.json({ data: { success: true, permanentlyDeleted: result.count, errors: result.errors } });
 	} catch (error) {
 		next(error);
 	}
@@ -364,7 +398,7 @@ router.delete('/files/:id', async (req, res, next) => {
 			return;
 		}
 
-		await deleteContextFile(req.user.id, context, req.params.id);
+		softDeleteFilesByIds(req.user.id, [req.params.id]);
 
 		return res.json({ data: { success: true } });
 	} catch (error) {

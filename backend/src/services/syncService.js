@@ -4,6 +4,7 @@ import { LOCAL_USER_ID } from '../config/database.js';
 import { getActiveAccounts, markAccountStatus, updateAccountStorage } from './accountService.js';
 import { createAdapter } from './adapterRegistry.js';
 import { clearFilesForAccount, replaceFilesForAccount } from './fileService.js';
+import { getExpiredTrashRows, removeTrashedRows, getTrashUserIds } from './trashService.js';
 import { isAuthError, withRetry } from '../utils/providerErrors.js';
 
 async function fetchAccountSnapshot(account) {
@@ -96,6 +97,52 @@ export function scheduleSync() {
 		runDeltaSync(LOCAL_USER_ID).catch((error) => {
 			console.error('Delta sync failed:', error);
 		});
+	});
+	scheduleTrashPurge();
+}
+
+export async function purgeExpiredTrash(userId) {
+	const cutoff = new Date(Date.now() - env.trashRetentionDays * 24 * 60 * 60 * 1000).toISOString();
+	const rows = getExpiredTrashRows(userId, cutoff);
+	if (!rows.length) {
+		return { purged: 0, errors: [] };
+	}
+
+	const accounts = getActiveAccounts(userId);
+	const adapterByAccount = new Map(accounts.map((account) => [account.id, createAdapter(account)]));
+	const errors = [];
+	for (const row of rows) {
+		const adapter = adapterByAccount.get(row.cloud_account_id);
+		try {
+			if (adapter) {
+				await adapter.deleteFile({
+					remote_file_id: row.remote_file_id,
+					file_name: row.file_name,
+					is_folder: Boolean(row.is_folder),
+				});
+			}
+		} catch (error) {
+			errors.push({ id: row.id, error: error.message });
+		}
+	}
+	removeTrashedRows(userId, rows.map((row) => row.id));
+	return { purged: rows.length, errors };
+}
+
+export function scheduleTrashPurge() {
+	cron.schedule('0 3 * * *', async () => {
+		if (env.appMode === 'local') {
+			await purgeExpiredTrash(LOCAL_USER_ID).catch((error) => {
+				console.error('Trash purge failed:', error.message);
+			});
+			return;
+		}
+		const userIds = getTrashUserIds();
+		for (const userId of userIds) {
+			await purgeExpiredTrash(userId).catch((error) => {
+				console.error(`Trash purge failed for ${userId}:`, error.message);
+			});
+		}
 	});
 }
 
