@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { IconFolder, IconStar, IconStarFilled, IconEye, IconDownload, IconEdit, IconInfoCircle, IconTrash } from '@tabler/icons-vue';
+import { IconFolder, IconStar, IconStarFilled, IconEye, IconDownload, IconEdit, IconInfoCircle, IconTrash, IconSend } from '@tabler/icons-vue';
 
 const { t } = useI18n();
 
@@ -18,9 +18,10 @@ const props = defineProps({
 	canShowDetails: { type: Boolean, default: true },
 	canOpenFolder: { type: Boolean, default: false },
 	canDelete: { type: Boolean, default: true },
+	canBackupToTelegram: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['open-folder', 'preview', 'toggle-star', 'download', 'rename', 'show-details', 'delete', 'close']);
+const emit = defineEmits(['open-folder', 'preview', 'toggle-star', 'download', 'rename', 'show-details', 'delete', 'backup', 'close']);
 
 const showOpen = computed(() => props.canOpenFolder && props.selectedCount === 1 && Boolean(props.primarySelectedFile?.is_folder));
 const showPreview = computed(() => props.selectedCount === 1 && !props.primarySelectedFile?.is_folder);
@@ -47,6 +48,9 @@ function handleDetails() {
 function handleDelete() {
 	emit('delete');
 }
+function handleBackup() {
+	emit('backup');
+}
 </script>
 
 <template>
@@ -70,6 +74,10 @@ function handleDelete() {
 		<button v-if="canRename" type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-100 dark:hover:bg-slate-700/70" :disabled="!canRename" @click="handleRename">
 			<IconEdit :size="17" :stroke="2" />
 			<span>{{ t('common.rename') }}</span>
+		</button>
+		<button v-if="canBackupToTelegram" type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="handleBackup">
+			<IconSend :size="17" :stroke="2" />
+			<span>{{ t('telegram.backupToTelegram') }}</span>
 		</button>
 		<button type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-100 dark:hover:bg-slate-700/70" :disabled="!canShowDetails" @click="handleDetails">
 			<IconInfoCircle :size="17" :stroke="2" />

@@ -23,6 +23,7 @@ import MegaConnectModal from '../components/MegaConnectModal.vue';
 import PCloudConnectModal from '../components/PCloudConnectModal.vue';
 import S3ConnectModal from '../components/S3ConnectModal.vue';
 import TruncateMarquee from '../components/TruncateMarquee.vue';
+import { IconSend } from '@tabler/icons-vue';
 import { useAccountManagementStore } from '../stores/accountManagement';
 import { api } from '../services/api';
 import { formatBytesStrict, providerIcon, providerLabel } from '../composables/useFormatFile.js';
@@ -43,6 +44,12 @@ const isConnectMenuOpen = ref(false);
 const isMegaModalOpen = ref(false);
 const isPCloudModalOpen = ref(false);
 const isS3ModalOpen = ref(false);
+
+const telegramStatus = ref(null);
+const telegramError = ref('');
+const telegramSuccess = ref('');
+const isTelegramChecking = ref(false);
+const isTelegramBackingUp = ref(false);
 
 const ALLOCATION_STRATEGIES = ['round_robin', 'weighted_round_robin', 'least_used', 'most_free', 'manual'];
 const activeTab = ref('overview');
@@ -534,9 +541,58 @@ async function handleOAuthRedirect() {
 	router.replace({ query: nextQuery });
 }
 
+async function loadTelegramStatus() {
+	telegramError.value = '';
+	try {
+		const { data } = await api.telegramStatus();
+		telegramStatus.value = data;
+	} catch (error) {
+		telegramStatus.value = null;
+		telegramError.value = error.message;
+	}
+}
+
+async function verifyTelegram() {
+	isTelegramChecking.value = true;
+	telegramError.value = '';
+	telegramSuccess.value = '';
+	try {
+		const { data } = await api.telegramStatus();
+		telegramStatus.value = data;
+		if (data?.connected) {
+			telegramSuccess.value = t('telegram.verifySuccess', { chat: data.chat?.title || '' });
+		} else {
+			telegramError.value = data?.error || t('telegram.connectionFailed');
+		}
+	} catch (error) {
+		telegramError.value = error.message;
+	} finally {
+		isTelegramChecking.value = false;
+	}
+}
+
+async function backupMetadataToTelegram() {
+	if (!telegramStatus.value?.configured) {
+		telegramError.value = t('telegram.notConfigured');
+		return;
+	}
+	isTelegramBackingUp.value = true;
+	telegramError.value = '';
+	telegramSuccess.value = '';
+	try {
+		const { data } = await api.backupMetadataToTelegram();
+		telegramSuccess.value = t('telegram.backedUp', { count: data?.fileCount ?? 0 });
+	} catch (error) {
+		telegramError.value = error.message;
+	} finally {
+		isTelegramBackingUp.value = false;
+	}
+}
+
 onMounted(async () => {
 	await loadPage();
 	await handleOAuthRedirect();
+	await loadTelegramStatus();
 });
 </script>
 
@@ -665,6 +721,50 @@ onMounted(async () => {
 							<span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold capitalize" :class="providerBadgeClass(account.status)">{{ account.status }}</span>
 						</div>
 					</div>
+				</div>
+			</section>
+
+			<section class="mb-6 rounded-[28px] border border-[#e0e3e7] bg-white p-5 dark:border-slate-700 dark:bg-slate-900/70">
+				<div class="flex flex-col gap-4">
+					<div class="flex items-center gap-3">
+						<div class="grid size-12 place-items-center rounded-2xl bg-[#e8f0fe] text-[#1a73e8] dark:bg-slate-800">
+							<IconSend :size="24" :stroke="1.8" />
+						</div>
+						<div class="flex-1">
+							<h2 class="text-lg font-medium">{{ t('telegram.title') }}</h2>
+							<p class="text-sm text-[#5f6368] dark:text-slate-400">{{ t('telegram.subtitle') }}</p>
+						</div>
+					</div>
+
+					<div class="rounded-[22px] bg-[#f8fafd] px-4 py-3 text-sm dark:bg-slate-800/80">
+						<div v-if="telegramStatus?.connected" class="flex items-center justify-between gap-3">
+							<span class="inline-flex items-center gap-2 text-[#188038] dark:text-emerald-300">
+								<span class="size-2.5 rounded-full bg-[#188038] dark:bg-emerald-400" />
+								{{ t('telegram.connected', { chat: telegramStatus.chat?.title || '' }) }}
+							</span>
+							<span class="text-xs text-[#5f6368] dark:text-slate-400">@{{ telegramStatus.bot }}</span>
+						</div>
+						<div v-else-if="telegramStatus?.configured" class="text-[#c5221f] dark:text-red-300">
+							{{ telegramStatus.error || t('telegram.connectionFailed') }}
+						</div>
+						<div v-else class="text-[#5f6368] dark:text-slate-400">
+							{{ t('telegram.notConfiguredHint') }}
+						</div>
+					</div>
+
+					<div class="flex flex-wrap items-center gap-3">
+						<button type="button" class="inline-flex items-center gap-2 rounded-full border border-[#dadce0] bg-white px-4 py-2 text-[#1a73e8] disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800 dark:text-sky-400" :disabled="isTelegramChecking" @click="verifyTelegram">
+							<IconRefresh :size="18" :stroke="2" :class="isTelegramChecking ? 'animate-spin' : ''" />
+							<span>{{ isTelegramChecking ? t('telegram.verifying') : t('telegram.verify') }}</span>
+						</button>
+						<button type="button" class="inline-flex items-center gap-2 rounded-full bg-[#1a73e8] px-4 py-2 text-white disabled:opacity-60" :disabled="isTelegramBackingUp || !telegramStatus?.configured" @click="backupMetadataToTelegram">
+							<IconSend :size="18" :stroke="2" />
+							<span>{{ isTelegramBackingUp ? t('telegram.backingUp') : t('telegram.backupMetadata') }}</span>
+						</button>
+					</div>
+
+					<p v-if="telegramError" class="rounded-2xl bg-[#fce8e6] px-4 py-3 text-sm text-[#c5221f] dark:bg-red-950/40 dark:text-red-300">{{ telegramError }}</p>
+					<p v-if="telegramSuccess" class="rounded-2xl bg-[#e6f4ea] px-4 py-3 text-sm text-[#188038] dark:bg-emerald-950/40 dark:text-emerald-300">{{ telegramSuccess }}</p>
 				</div>
 			</section>
 

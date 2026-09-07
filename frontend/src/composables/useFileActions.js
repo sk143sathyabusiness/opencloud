@@ -74,6 +74,9 @@ export function useFileActions({
 	const canDownloadSelection = computed(
 		() => selectedFiles.value.some((file) => !file.is_folder),
 	);
+	const canBackupToTelegram = computed(
+		() => selectedFiles.value.some((file) => !file.is_folder),
+	);
 	const canRenameSelection = computed(
 		() => selectedCount.value === 1 && primarySelectedFile.value?.capabilities?.rename !== false,
 	);
@@ -199,6 +202,20 @@ export function useFileActions({
 		});
 	}
 
+	async function backupSelectedFileToTelegram() {
+		const targets = getActionFiles().filter((file) => !file.is_folder);
+		if (!targets.length) return;
+		closeContextMenu();
+		errorRef.value = '';
+		try {
+			for (const file of targets) {
+				await runWithProgress(t('telegram.backingUp'), () => api.backupFileToTelegram(file.id));
+			}
+		} catch (error) {
+			errorRef.value = error.message;
+		}
+	}
+
 	return {
 		contextMenu,
 		contextMenuRef,
@@ -236,6 +253,8 @@ export function useFileActions({
 		showSelectedFileDetails,
 		canDownloadSelection,
 		canRenameSelection,
+		canBackupToTelegram,
+		backupSelectedFileToTelegram,
 		canToggleStarSelection,
 		isPrimarySelectedStarred,
 		canOpenSelection,

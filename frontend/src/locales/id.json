@@ -422,5 +422,20 @@
 		"notAvailable": "Preview belum tersedia untuk tipe file ini.",
 		"document": "Preview dokumen",
 		"failed": "Preview gagal dimuat. Beberapa file provider memang tidak kompatibel untuk preview ringan."
+	},
+	"telegram": {
+		"title": "Cadangan Telegram",
+		"subtitle": "Cadangkan file dan indeks file OpenCloud Anda ke kanal Telegram.",
+		"backupToTelegram": "Cadangkan ke Telegram",
+		"verify": "Verifikasi koneksi",
+		"verifying": "Memverifikasi...",
+		"backupMetadata": "Cadangkan metadata",
+		"backingUp": "Mencadangkan ke Telegram...",
+		"backedUp": "Snapshot metadata dengan {count} file terkirim ke kanal Telegram Anda.",
+		"verifySuccess": "Terhubung ke {chat}.",
+		"connected": "Terhubung ke {chat}",
+		"connectionFailed": "Tidak dapat terhubung ke kanal Telegram.",
+		"notConfigured": "Telegram belum dikonfigurasi.",
+		"notConfiguredHint": "Atur TELEGRAM_BOT_TOKEN dan TELEGRAM_CHAT_ID di backend/.env, lalu verifikasi koneksi."
 	}
 }

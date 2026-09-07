@@ -224,4 +224,18 @@ export const api = {
 			body: JSON.stringify(payload),
 		});
 	},
+	telegramStatus() {
+		return request('/telegram/status');
+	},
+	backupFileToTelegram(fileId) {
+		return request('/telegram/backup-file', {
+			method: 'POST',
+			body: JSON.stringify({ fileId }),
+		});
+	},
+	backupMetadataToTelegram() {
+		return request('/telegram/backup-metadata', {
+			method: 'POST',
+		});
+	},
 };

@@ -421,5 +421,20 @@
 		"notAvailable": "Preview is not available for this file type.",
 		"document": "Document preview",
 		"failed": "Preview failed to load. Some provider files are not compatible with lightweight preview."
+	},
+	"telegram": {
+		"title": "Telegram Backup",
+		"subtitle": "Back up files and your OpenCloud file index to a Telegram channel.",
+		"backupToTelegram": "Backup to Telegram",
+		"verify": "Verify connection",
+		"verifying": "Verifying...",
+		"backupMetadata": "Backup metadata",
+		"backingUp": "Backing up to Telegram...",
+		"backedUp": "Metadata snapshot with {count} files sent to your Telegram channel.",
+		"verifySuccess": "Connected to {chat}.",
+		"connected": "Connected to {chat}",
+		"connectionFailed": "Could not connect to the Telegram channel.",
+		"notConfigured": "Telegram is not configured.",
+		"notConfiguredHint": "Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in backend/.env, then verify the connection."
 	}
 }
