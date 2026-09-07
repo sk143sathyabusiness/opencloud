@@ -1,16 +1,8 @@
-import dotenv from 'dotenv';
-import os from 'os';
 import crypto from 'crypto';
 
-dotenv.config();
-
-const machineFingerprint = crypto
-	.createHash('sha256')
-	.update(`${os.hostname()}|${os.platform()}|${os.arch()}`)
-	.digest('hex');
-
+const fingerprint = process.env.OMNICLOUD_FINGERPRINT || 'local-machine';
 const envHalf = process.env.OMNICLOUD_SECRET_HALF || 'omnicloud-dev-secret-half';
-const derivedKeyMaterial = `${envHalf}:${machineFingerprint}`;
+const derivedKeyMaterial = `${envHalf}:${fingerprint}`;
 const encryptionKey = crypto.createHash('sha256').update(derivedKeyMaterial).digest();
 
 export const env = {

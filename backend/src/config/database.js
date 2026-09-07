@@ -6,8 +6,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const dbPath = process.env.DATABASE_PATH || path.resolve(__dirname, '../../omnicloud.db');
 
-export const LOCAL_USER_ID = 'local-default-user';
-export const LOCAL_USER_EMAIL = 'local@omnicloud.local';
+import { LOCAL_USER_ID, LOCAL_USER_EMAIL } from './constants.js';
+export { LOCAL_USER_ID, LOCAL_USER_EMAIL };
 
 export const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
