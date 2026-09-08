@@ -76,7 +76,8 @@ Set these in the Cloudflare Pages dashboard or via `wrangler.toml` / `vars`.
 | `ONEDRIVE_CLIENT_ID` / `ONEDRIVE_CLIENT_SECRET` / `ONEDRIVE_TENANT_ID` / `ONEDRIVE_REDIRECT_URI` | — | OneDrive OAuth (SP-4+). |
 | `DROPBOX_CLIENT_ID` / `DROPBOX_CLIENT_SECRET` / `DROPBOX_REDIRECT_URI` | — | Dropbox OAuth (SP-4+). |
 | `YANDEX_CLIENT_ID` / `YANDEX_CLIENT_SECRET` / `YANDEX_REDIRECT_URI` | — | Yandex OAuth (SP-4+). |
-| `TELEGRAM_BOT_TOKEN` | — | Telegram integration (SP-5+). |
+| `TELEGRAM_BOT_TOKEN` | — | Telegram bot API token. |
+| `TELEGRAM_CHAT_ID` | — | Telegram chat/channel ID for notifications. |
 | `UPLOAD_MAX_BYTES` | `104857600` (100 MB) | Maximum total upload size in bytes. Uploads exceeding this are rejected with 413. |
 | `MAX_CHUNK_BYTES` | `26214400` (25 MB) | Maximum per-chunk size in bytes. Chunks exceeding this are rejected with 413. |
 
@@ -306,8 +307,6 @@ All endpoints are mounted under `/api` via Express 5 on the Cloudflare Worker.
 These are deferred to subsequent sub-projects:
 
 - **WebSocket upload progress:** WS `/ws/uploads` not yet wired. Poll-based fallback is used.
-- **Cron sync:** `node-cron` → Cloudflare Cron Triggers (SP-5).
-- **Telegram integration:** Bot token handling and file sync (SP-5).
 - **MEGA provider:** Dropped from Cloudflare version (not compatible with Workers).
 - **invalid_token status:** `cloud_accounts.status` enum supports `'invalid_token'` but never set on refresh failure.
 - **Vitest pool:** Tests use direct Miniflare API; migration to `@cloudflare/vitest-pool-workers` deferred.
