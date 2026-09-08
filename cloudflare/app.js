@@ -8,6 +8,7 @@ import { createSettingsRouter } from './routes/settings.js';
 import { createAllocationRouter } from './routes/allocation.js';
 import { createShareRouter } from './routes/share.js';
 import { createHealthRouter } from './routes/health.js';
+import { createSyncRouter } from './routes/sync.js';
 
 export function createApp() {
   const app = express();
@@ -22,6 +23,7 @@ export function createApp() {
   app.use('/api', createSettingsRouter());
   app.use('/api', createAllocationRouter());
   app.use('/api', createShareRouter());
+  app.use('/api', createSyncRouter());
 
   return app;
 }

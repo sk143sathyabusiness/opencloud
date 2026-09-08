@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { getDb } from '../db.js';
-import { requireAppUser } from '../middleware.js';
 
 export function createHealthRouter() {
   const router = Router();
@@ -65,57 +64,6 @@ export function createHealthRouter() {
         timestamp: new Date().toISOString(),
         error: error.message,
       });
-    }
-  });
-
-  router.post('/sync/:accountId', requireAppUser, async (req, res, next) => {
-    try {
-      const db = getDb();
-      const { accountId } = req.params;
-      const userId = req.user.id;
-
-      const account = await db.prepare(
-        'SELECT * FROM cloud_accounts WHERE id = ? AND user_id = ?'
-      ).get(accountId, userId);
-
-      if (!account) {
-        return res.status(404).json({ error: 'Account not found' });
-      }
-
-      res.json({
-        status: 'pending',
-        accountId: account.id,
-        provider: account.provider,
-        message: 'Sync queued — full adapter integration pending (SP-5)',
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  router.get('/sync/:accountId/status', requireAppUser, async (req, res, next) => {
-    try {
-      const db = getDb();
-      const { accountId } = req.params;
-      const userId = req.user.id;
-
-      const account = await db.prepare(
-        'SELECT id, provider, status, updated_at FROM cloud_accounts WHERE id = ? AND user_id = ?'
-      ).get(accountId, userId);
-
-      if (!account) {
-        return res.status(404).json({ error: 'Account not found' });
-      }
-
-      res.json({
-        accountId: account.id,
-        provider: account.provider,
-        status: account.status,
-        lastSyncAt: account.updated_at,
-      });
-    } catch (error) {
-      next(error);
     }
   });
 
