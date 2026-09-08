@@ -2,10 +2,43 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import express from 'express';
 import { runExpress } from '../expressBridge.js';
-import { createFilesRouter } from '../routes/files.js';
+import { createFilesRouter, _setAdapterOverrides, _clearAdapterOverrides } from '../routes/files.js';
 import { seedEnv } from './helpers.mjs';
 import { getDb } from '../db.js';
 import { randomUUID } from 'crypto';
+
+class MockAdapter {
+  constructor(account) {
+    this.account = account;
+  }
+
+  async getDownloadStream(fileRecord) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(`content-of-${fileRecord.file_name}`);
+    return new ReadableStream({
+      start(controller) {
+        controller.enqueue(data);
+        controller.close();
+      }
+    });
+  }
+
+  async createFolder({ name }) {
+    return {
+      remoteFileId: `mock-folder-${Date.now()}`,
+      remoteParentId: null,
+      fileName: name,
+    };
+  }
+
+  async moveFile() {
+    return true;
+  }
+
+  async copyFile() {
+    return { remoteFileId: `mock-copy-${Date.now()}` };
+  }
+}
 
 function makeApp() {
   const app = express();
@@ -553,19 +586,35 @@ test('POST /api/files/bulk/download returns 501', async () => {
 
 // --- POST /api/files/bulk/move ---
 
-test('POST /api/files/bulk/move returns 501', async () => {
+test('POST /api/files/bulk/move moves multiple files', async () => {
   await seedEnv(async () => {
     const db = getDb();
     const accountId = await insertTestAccount(db, AUTH_USER.id);
-    const fileId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'move.txt' });
+    await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'target-folder', is_folder: 1, virtual_path: '/' });
+    const fileId1 = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'bulk-move1.txt', virtual_path: '/' });
+    const fileId2 = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'bulk-move2.txt', virtual_path: '/' });
 
-    const app = makeApp();
-    const res = await runExpress(app, new Request('http://x/api/files/bulk/move', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: [fileId], destinationPath: '/' }),
-    }), { user: AUTH_USER });
-    assert.equal(res.status, 501);
+    _setAdapterOverrides({ google_drive: MockAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request('http://x/api/files/bulk/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [fileId1, fileId2], destinationPath: '/target-folder/' }),
+      }), { user: AUTH_USER });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.data.success, true);
+      assert.equal(body.data.moved, 2);
+      assert.equal(body.data.errors.length, 0);
+
+      const { results } = await db.prepare('SELECT virtual_path FROM file_metadata WHERE id IN (?, ?)').all(fileId1, fileId2);
+      for (const row of results) {
+        assert.equal(row.virtual_path, '/target-folder/');
+      }
+    } finally {
+      _clearAdapterOverrides();
+    }
   });
 });
 
@@ -583,19 +632,36 @@ test('POST /api/files/bulk/move returns 400 without ids', async () => {
 
 // --- POST /api/files/bulk/copy ---
 
-test('POST /api/files/bulk/copy returns 501', async () => {
+test('POST /api/files/bulk/copy copies multiple files', async () => {
   await seedEnv(async () => {
     const db = getDb();
     const accountId = await insertTestAccount(db, AUTH_USER.id);
-    const fileId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'copy.txt' });
+    await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'target-folder', is_folder: 1, virtual_path: '/' });
+    const fileId1 = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'bulk-copy1.txt', virtual_path: '/' });
+    const fileId2 = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'bulk-copy2.txt', virtual_path: '/' });
 
-    const app = makeApp();
-    const res = await runExpress(app, new Request('http://x/api/files/bulk/copy', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: [fileId], destinationPath: '/' }),
-    }), { user: AUTH_USER });
-    assert.equal(res.status, 501);
+    _setAdapterOverrides({ google_drive: MockAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request('http://x/api/files/bulk/copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [fileId1, fileId2], destinationPath: '/target-folder/' }),
+      }), { user: AUTH_USER });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.data.success, true);
+      assert.equal(body.data.copied, 2);
+      assert.equal(body.data.errors.length, 0);
+
+      const { results } = await db.prepare('SELECT virtual_path FROM file_metadata WHERE user_id = ? AND is_folder = 0 AND virtual_path = ?').all(AUTH_USER.id, '/target-folder/');
+      assert.ok(results.length >= 2);
+      for (const row of results) {
+        assert.equal(row.virtual_path, '/target-folder/');
+      }
+    } finally {
+      _clearAdapterOverrides();
+    }
   });
 });
 
@@ -613,31 +679,166 @@ test('POST /api/files/bulk/copy returns 400 without ids', async () => {
 
 // --- Adapter-dependent routes return 501 ---
 
-test('GET /api/files/:id/download returns 501', async () => {
+test('GET /api/files/:id/download streams file content', async () => {
   await seedEnv(async () => {
     const db = getDb();
     const accountId = await insertTestAccount(db, AUTH_USER.id);
-    const fileId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'dl.txt' });
+    const fileId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'download.txt', mime_type: 'text/plain' });
 
-    const app = makeApp();
-    const res = await runExpress(app, new Request(`http://x/api/files/${fileId}/download`), { user: AUTH_USER });
-    assert.equal(res.status, 501);
+    _setAdapterOverrides({ google_drive: MockAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request(`http://x/api/files/${fileId}/download`), { user: AUTH_USER });
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get('content-disposition'), 'attachment; filename="download.txt"');
+      assert.equal(res.headers.get('content-type'), 'text/plain');
+      const text = await res.text();
+      assert.equal(text, 'content-of-download.txt');
+    } finally {
+      _clearAdapterOverrides();
+    }
   });
 });
 
-test('GET /api/files/:id/preview returns 501', async () => {
+test('GET /api/files/:id/download returns 404 for nonexistent file', async () => {
+  await seedEnv(async () => {
+    const app = makeApp();
+    const res = await runExpress(app, new Request(`http://x/api/files/${randomUUID()}/download`), { user: AUTH_USER });
+    assert.equal(res.status, 404);
+  });
+});
+
+test('GET /api/files/:id/download returns 400 for folder', async () => {
   await seedEnv(async () => {
     const db = getDb();
     const accountId = await insertTestAccount(db, AUTH_USER.id);
-    const fileId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'preview.txt' });
+    const folderId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'myfolder', is_folder: 1 });
+
+    _setAdapterOverrides({ google_drive: MockAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request(`http://x/api/files/${folderId}/download`), { user: AUTH_USER });
+      assert.equal(res.status, 400);
+    } finally {
+      _clearAdapterOverrides();
+    }
+  });
+});
+
+test('GET /api/files/:id/preview returns inline content for previewable type', async () => {
+  await seedEnv(async () => {
+    const db = getDb();
+    const accountId = await insertTestAccount(db, AUTH_USER.id);
+    const fileId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'preview.txt', mime_type: 'text/plain' });
+
+    _setAdapterOverrides({ google_drive: MockAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request(`http://x/api/files/${fileId}/preview`), { user: AUTH_USER });
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get('content-disposition'), 'inline');
+      assert.equal(res.headers.get('content-type'), 'text/plain');
+      const text = await res.text();
+      assert.equal(text, 'content-of-preview.txt');
+    } finally {
+      _clearAdapterOverrides();
+    }
+  });
+});
+
+test('GET /api/files/:id/preview returns 415 for non-previewable type', async () => {
+  await seedEnv(async () => {
+    const db = getDb();
+    const accountId = await insertTestAccount(db, AUTH_USER.id);
+    const fileId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'app.exe', mime_type: 'application/x-msdownload' });
 
     const app = makeApp();
     const res = await runExpress(app, new Request(`http://x/api/files/${fileId}/preview`), { user: AUTH_USER });
-    assert.equal(res.status, 501);
+    assert.equal(res.status, 415);
   });
 });
 
-test('POST /api/files/:id/move returns 501', async () => {
+test('GET /api/files/:id/preview returns 404 for nonexistent file', async () => {
+  await seedEnv(async () => {
+    const app = makeApp();
+    const res = await runExpress(app, new Request(`http://x/api/files/${randomUUID()}/preview`), { user: AUTH_USER });
+    assert.equal(res.status, 404);
+  });
+});
+
+test('GET /api/files/:id/preview returns 400 for folder', async () => {
+  await seedEnv(async () => {
+    const db = getDb();
+    const accountId = await insertTestAccount(db, AUTH_USER.id);
+    const folderId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'myfolder', is_folder: 1, mime_type: null });
+
+    _setAdapterOverrides({ google_drive: MockAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request(`http://x/api/files/${folderId}/preview`), { user: AUTH_USER });
+      assert.equal(res.status, 400);
+    } finally {
+      _clearAdapterOverrides();
+    }
+  });
+});
+
+test('POST /api/files/:id/move moves a file', async () => {
+  await seedEnv(async () => {
+    const db = getDb();
+    const accountId = await insertTestAccount(db, AUTH_USER.id);
+    await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'target-folder', is_folder: 1, virtual_path: '/' });
+    const fileId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'move-me.txt', virtual_path: '/' });
+
+    _setAdapterOverrides({ google_drive: MockAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request(`http://x/api/files/${fileId}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ destinationPath: '/target-folder/' }),
+      }), { user: AUTH_USER });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.data.success, true);
+
+      const { results } = await db.prepare('SELECT virtual_path, remote_parent_id FROM file_metadata WHERE id = ?').all(fileId);
+      assert.equal(results[0].virtual_path, '/target-folder/');
+    } finally {
+      _clearAdapterOverrides();
+    }
+  });
+});
+
+test('POST /api/files/:id/move returns 400 without destinationPath', async () => {
+  await seedEnv(async () => {
+    const db = getDb();
+    const accountId = await insertTestAccount(db, AUTH_USER.id);
+    const fileId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'move.txt' });
+
+    const app = makeApp();
+    const res = await runExpress(app, new Request(`http://x/api/files/${fileId}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }), { user: AUTH_USER });
+    assert.equal(res.status, 400);
+  });
+});
+
+test('POST /api/files/:id/move returns 404 for nonexistent file', async () => {
+  await seedEnv(async () => {
+    const app = makeApp();
+    const res = await runExpress(app, new Request(`http://x/api/files/${randomUUID()}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ destinationPath: '/' }),
+    }), { user: AUTH_USER });
+    assert.equal(res.status, 404);
+  });
+});
+
+test('POST /api/files/:id/move returns 501 when adapter lacks moveFile', async () => {
   await seedEnv(async () => {
     const db = getDb();
     const accountId = await insertTestAccount(db, AUTH_USER.id);
@@ -653,7 +854,65 @@ test('POST /api/files/:id/move returns 501', async () => {
   });
 });
 
-test('POST /api/files/:id/copy returns 501', async () => {
+test('POST /api/files/:id/copy copies a file', async () => {
+  await seedEnv(async () => {
+    const db = getDb();
+    const accountId = await insertTestAccount(db, AUTH_USER.id);
+    await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'target-folder', is_folder: 1, virtual_path: '/' });
+    const fileId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'copy-me.txt', virtual_path: '/' });
+
+    _setAdapterOverrides({ google_drive: MockAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request(`http://x/api/files/${fileId}/copy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ destinationPath: '/target-folder/' }),
+      }), { user: AUTH_USER });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.data.success, true);
+      assert.ok(body.data.id);
+
+      const { results } = await db.prepare('SELECT * FROM file_metadata WHERE id = ?').all(body.data.id);
+      assert.equal(results.length, 1);
+      assert.equal(results[0].virtual_path, '/target-folder/');
+      assert.equal(results[0].file_name, 'copy-me.txt');
+    } finally {
+      _clearAdapterOverrides();
+    }
+  });
+});
+
+test('POST /api/files/:id/copy returns 400 without destinationPath', async () => {
+  await seedEnv(async () => {
+    const db = getDb();
+    const accountId = await insertTestAccount(db, AUTH_USER.id);
+    const fileId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'copy.txt' });
+
+    const app = makeApp();
+    const res = await runExpress(app, new Request(`http://x/api/files/${fileId}/copy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }), { user: AUTH_USER });
+    assert.equal(res.status, 400);
+  });
+});
+
+test('POST /api/files/:id/copy returns 404 for nonexistent file', async () => {
+  await seedEnv(async () => {
+    const app = makeApp();
+    const res = await runExpress(app, new Request(`http://x/api/files/${randomUUID()}/copy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ destinationPath: '/' }),
+    }), { user: AUTH_USER });
+    assert.equal(res.status, 404);
+  });
+});
+
+test('POST /api/files/:id/copy returns 501 when adapter lacks copyFile', async () => {
   await seedEnv(async () => {
     const db = getDb();
     const accountId = await insertTestAccount(db, AUTH_USER.id);
@@ -681,15 +940,30 @@ test('GET /api/files/:id/shared-children returns 501', async () => {
   });
 });
 
-test('POST /api/files/folders returns 501', async () => {
+test('POST /api/files/folders creates a folder', async () => {
   await seedEnv(async () => {
-    const app = makeApp();
-    const res = await runExpress(app, new Request('http://x/api/files/folders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'New Folder' }),
-    }), { user: AUTH_USER });
-    assert.equal(res.status, 501);
+    const db = getDb();
+    const accountId = await insertTestAccount(db, AUTH_USER.id);
+
+    _setAdapterOverrides({ google_drive: MockAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request('http://x/api/files/folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'New Folder', path: '/' }),
+      }), { user: AUTH_USER });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.data.file_name, 'New Folder');
+      assert.equal(body.data.virtual_path, '/');
+
+      const { results } = await db.prepare('SELECT * FROM file_metadata WHERE user_id = ? AND file_name = ?').all(AUTH_USER.id, 'New Folder');
+      assert.equal(results.length, 1);
+      assert.equal(results[0].is_folder, 1);
+    } finally {
+      _clearAdapterOverrides();
+    }
   });
 });
 

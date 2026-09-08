@@ -1,7 +1,104 @@
 import { Router } from 'express';
 import { randomUUID } from 'crypto';
-import { getDb } from '../db.js';
+import { getDb, envStore } from '../db.js';
 import { requireAppUser } from '../middleware.js';
+
+// --- Adapter override mechanism (for testing) ---
+let _adapterOverrides = null;
+export function _setAdapterOverrides(map) { _adapterOverrides = map; }
+export function _clearAdapterOverrides() { _adapterOverrides = null; }
+
+const ADAPTER_IMPORTERS = {
+  google_drive: () => import('../adapters/google.js'),
+  onedrive: () => import('../adapters/onedrive.js'),
+  dropbox: () => import('../adapters/dropbox.js'),
+  yandex: () => import('../adapters/yandex.js'),
+  s3: () => import('../adapters/s3.js'),
+  pcloud: () => import('../adapters/pcloud.js'),
+};
+
+const ADAPTER_CLASS_NAMES = {
+  google_drive: 'GoogleDriveAdapter',
+  onedrive: 'OneDriveAdapter',
+  dropbox: 'DropboxAdapter',
+  yandex: 'YandexAdapter',
+  s3: 'S3Adapter',
+  pcloud: 'PCloudAdapter',
+};
+
+async function getAdapterForAccount(accountId) {
+  const db = getDb();
+  const account = await db.prepare('SELECT * FROM cloud_accounts WHERE id = ?').get(accountId);
+  if (!account) return null;
+
+  if (_adapterOverrides && _adapterOverrides[account.provider]) {
+    const AdapterClass = _adapterOverrides[account.provider];
+    return new AdapterClass(account);
+  }
+
+  const importer = ADAPTER_IMPORTERS[account.provider];
+  if (!importer) return null;
+
+  const mod = await importer();
+  const AdapterClass = mod[ADAPTER_CLASS_NAMES[account.provider]];
+  if (!AdapterClass) return null;
+
+  const env = envStore.getStore();
+  return new AdapterClass(account, env);
+}
+
+async function resolveDestinationFolder(db, userId, destinationPath, cloudAccountId) {
+  const normalized = normalizePath(destinationPath);
+  if (normalized === '/') {
+    return { remoteFileId: null, virtualPath: '/' };
+  }
+
+  const trimmed = normalized.replace(/\/+$/, '');
+  const lastSlash = trimmed.lastIndexOf('/');
+  const folderName = lastSlash === -1 ? trimmed : trimmed.slice(lastSlash + 1);
+  const parentPath = lastSlash === -1 ? '/' : trimmed.slice(0, lastSlash + 1);
+
+  const where = ['fm.user_id = ?', 'fm.virtual_path = ?', 'fm.file_name = ?', 'fm.is_folder = 1'];
+  const params = [userId, parentPath, folderName];
+  if (cloudAccountId) {
+    where.push('fm.cloud_account_id = ?');
+    params.push(cloudAccountId);
+  }
+
+  const { results } = await db.prepare(`
+    SELECT fm.* FROM file_metadata fm
+    WHERE ${where.join(' AND ')}
+    LIMIT 1
+  `).all(...params);
+
+  if (!results.length) return null;
+
+  return {
+    remoteFileId: results[0].remote_file_id,
+    virtualPath: normalized,
+    row: results[0],
+  };
+}
+
+async function collectStream(stream) {
+  const chunks = [];
+  const reader = stream.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks);
+}
+
+const PREVIEWABLE_PREFIXES = ['image/', 'video/', 'audio/', 'text/'];
+const PREVIEWABLE_TYPES = ['application/pdf'];
+
+function isPreviewable(mimeType) {
+  if (!mimeType) return false;
+  if (PREVIEWABLE_TYPES.includes(mimeType)) return true;
+  return PREVIEWABLE_PREFIXES.some((p) => mimeType.startsWith(p));
+}
 
 async function readJsonBody(req) {
   try {
@@ -362,11 +459,84 @@ export function createFilesRouter() {
   // POST /api/files/bulk/move
   router.post('/files/bulk/move', async (req, res, next) => {
     try {
+      const db = getDb();
+      const userId = req.user.id;
       const body = await readJsonBody(req);
       const { ids, destinationPath } = body;
+
       if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids are required' });
       if (!destinationPath?.trim()) return res.status(400).json({ error: 'destinationPath is required' });
-      return res.status(501).json({ error: 'Bulk move requires provider adapters' });
+
+      const placeholders = ids.map(() => '?').join(', ');
+      const { results: files } = await db.prepare(`
+        SELECT fm.*, ca.provider, ca.email
+        FROM file_metadata fm
+        INNER JOIN cloud_accounts ca ON ca.id = fm.cloud_account_id
+        WHERE fm.user_id = ? AND fm.id IN (${placeholders}) AND ca.status = 'active'
+      `).all(userId, ...ids);
+
+      if (!files.length) {
+        return res.status(404).json({ error: 'No files found' });
+      }
+
+      const byAccount = new Map();
+      for (const file of files) {
+        if (!byAccount.has(file.cloud_account_id)) byAccount.set(file.cloud_account_id, []);
+        byAccount.get(file.cloud_account_id).push(file);
+      }
+
+      const results = [];
+      const errors = [];
+
+      for (const [accountId, accountFiles] of byAccount) {
+        const dest = await resolveDestinationFolder(db, userId, destinationPath, accountId);
+        if (!dest && destinationPath !== '/') {
+          for (const file of accountFiles) {
+            errors.push({ id: file.id, error: 'Destination folder not found' });
+          }
+          continue;
+        }
+
+        let adapter;
+        try {
+          adapter = await getAdapterForAccount(accountId);
+        } catch (e) {
+          for (const file of accountFiles) {
+            errors.push({ id: file.id, error: 'Failed to initialize provider adapter' });
+          }
+          continue;
+        }
+        if (!adapter) {
+          for (const file of accountFiles) {
+            errors.push({ id: file.id, error: 'Provider adapter not available' });
+          }
+          continue;
+        }
+
+        if (typeof adapter.moveFile !== 'function') {
+          for (const file of accountFiles) {
+            errors.push({ id: file.id, error: 'Move not supported by this provider' });
+          }
+          continue;
+        }
+
+        for (const file of accountFiles) {
+          try {
+            await adapter.moveFile(file, dest?.remoteFileId || null);
+            const newVirtualPath = dest ? dest.virtualPath : '/';
+            const newRemoteParentId = dest?.remoteFileId || null;
+            await db.prepare(`
+              UPDATE file_metadata SET virtual_path = ?, remote_parent_id = ?, updated_at = CURRENT_TIMESTAMP
+              WHERE user_id = ? AND id = ?
+            `).run(newVirtualPath, newRemoteParentId, userId, file.id);
+            results.push({ id: file.id, success: true });
+          } catch (e) {
+            errors.push({ id: file.id, error: e.message });
+          }
+        }
+      }
+
+      return res.json({ data: { success: true, moved: results.length, errors } });
     } catch (error) {
       next(error);
     }
@@ -375,11 +545,91 @@ export function createFilesRouter() {
   // POST /api/files/bulk/copy
   router.post('/files/bulk/copy', async (req, res, next) => {
     try {
+      const db = getDb();
+      const userId = req.user.id;
       const body = await readJsonBody(req);
       const { ids, destinationPath } = body;
+
       if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids are required' });
       if (!destinationPath?.trim()) return res.status(400).json({ error: 'destinationPath is required' });
-      return res.status(501).json({ error: 'Bulk copy requires provider adapters' });
+
+      const placeholders = ids.map(() => '?').join(', ');
+      const { results: files } = await db.prepare(`
+        SELECT fm.*, ca.provider, ca.email
+        FROM file_metadata fm
+        INNER JOIN cloud_accounts ca ON ca.id = fm.cloud_account_id
+        WHERE fm.user_id = ? AND fm.id IN (${placeholders}) AND ca.status = 'active'
+      `).all(userId, ...ids);
+
+      if (!files.length) {
+        return res.status(404).json({ error: 'No files found' });
+      }
+
+      const byAccount = new Map();
+      for (const file of files) {
+        if (!byAccount.has(file.cloud_account_id)) byAccount.set(file.cloud_account_id, []);
+        byAccount.get(file.cloud_account_id).push(file);
+      }
+
+      const results = [];
+      const errors = [];
+
+      for (const [accountId, accountFiles] of byAccount) {
+        const dest = await resolveDestinationFolder(db, userId, destinationPath, accountId);
+        if (!dest && destinationPath !== '/') {
+          for (const file of accountFiles) {
+            errors.push({ id: file.id, error: 'Destination folder not found' });
+          }
+          continue;
+        }
+
+        let adapter;
+        try {
+          adapter = await getAdapterForAccount(accountId);
+        } catch (e) {
+          for (const file of accountFiles) {
+            errors.push({ id: file.id, error: 'Failed to initialize provider adapter' });
+          }
+          continue;
+        }
+        if (!adapter) {
+          for (const file of accountFiles) {
+            errors.push({ id: file.id, error: 'Provider adapter not available' });
+          }
+          continue;
+        }
+
+        if (typeof adapter.copyFile !== 'function') {
+          for (const file of accountFiles) {
+            errors.push({ id: file.id, error: 'Copy not supported by this provider' });
+          }
+          continue;
+        }
+
+        for (const file of accountFiles) {
+          try {
+            const copyResult = await adapter.copyFile(file, dest?.remoteFileId || null);
+            const newVirtualPath = dest ? dest.virtualPath : '/';
+            const newRemoteParentId = dest?.remoteFileId || null;
+            const newId = randomUUID();
+            await db.prepare(`
+              INSERT INTO file_metadata (
+                id, user_id, virtual_path, file_name, is_folder, is_starred, size, mime_type,
+                cloud_account_id, remote_file_id, remote_parent_id, remote_created_time, remote_modified_time
+              ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            `).run(
+              newId, userId, newVirtualPath, file.file_name, file.is_folder,
+              file.size, file.mime_type, file.cloud_account_id,
+              copyResult?.remoteFileId || `copy-${randomUUID()}`, newRemoteParentId
+            );
+            results.push({ id: newId, success: true });
+          } catch (e) {
+            errors.push({ id: file.id, error: e.message });
+          }
+        }
+      }
+
+      return res.json({ data: { success: true, copied: results.length, errors } });
     } catch (error) {
       next(error);
     }
@@ -428,7 +678,62 @@ export function createFilesRouter() {
   // POST /api/files/:id/move
   router.post('/files/:id/move', async (req, res, next) => {
     try {
-      return res.status(501).json({ error: 'File move requires provider adapters' });
+      const db = getDb();
+      const userId = req.user.id;
+      const fileId = req.params.id;
+      const body = await readJsonBody(req);
+      const { destinationPath } = body;
+
+      if (!destinationPath?.trim()) {
+        return res.status(400).json({ error: 'destinationPath is required' });
+      }
+
+      const { results } = await db.prepare(`
+        SELECT fm.*, ca.provider, ca.email
+        FROM file_metadata fm
+        INNER JOIN cloud_accounts ca ON ca.id = fm.cloud_account_id
+        WHERE fm.user_id = ? AND fm.id = ? AND ca.status = 'active'
+      `).all(userId, fileId);
+
+      if (!results.length) {
+        return res.status(404).json({ error: 'File not found' });
+      }
+
+      const file = results[0];
+
+      const dest = await resolveDestinationFolder(db, userId, destinationPath, file.cloud_account_id);
+      if (!dest && destinationPath !== '/') {
+        return res.status(404).json({ error: 'Destination folder not found' });
+      }
+
+      let adapter;
+      try {
+        adapter = await getAdapterForAccount(file.cloud_account_id);
+      } catch (e) {
+        return res.status(502).json({ error: 'Failed to initialize provider adapter' });
+      }
+      if (!adapter) {
+        return res.status(502).json({ error: 'Provider adapter not available' });
+      }
+
+      if (typeof adapter.moveFile !== 'function') {
+        return res.status(501).json({ error: 'Move not supported by this provider' });
+      }
+
+      try {
+        await adapter.moveFile(file, dest?.remoteFileId || null);
+      } catch (e) {
+        return res.status(502).json({ error: `Move failed: ${e.message}` });
+      }
+
+      const newVirtualPath = dest ? dest.virtualPath : '/';
+      const newRemoteParentId = dest?.remoteFileId || null;
+      await db.prepare(`
+        UPDATE file_metadata SET virtual_path = ?, remote_parent_id = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = ? AND id = ?
+      `).run(newVirtualPath, newRemoteParentId, userId, fileId);
+
+      return res.json({ data: { success: true } });
     } catch (error) {
       next(error);
     }
@@ -437,7 +742,70 @@ export function createFilesRouter() {
   // POST /api/files/:id/copy
   router.post('/files/:id/copy', async (req, res, next) => {
     try {
-      return res.status(501).json({ error: 'File copy requires provider adapters' });
+      const db = getDb();
+      const userId = req.user.id;
+      const fileId = req.params.id;
+      const body = await readJsonBody(req);
+      const { destinationPath } = body;
+
+      if (!destinationPath?.trim()) {
+        return res.status(400).json({ error: 'destinationPath is required' });
+      }
+
+      const { results } = await db.prepare(`
+        SELECT fm.*, ca.provider, ca.email
+        FROM file_metadata fm
+        INNER JOIN cloud_accounts ca ON ca.id = fm.cloud_account_id
+        WHERE fm.user_id = ? AND fm.id = ? AND ca.status = 'active'
+      `).all(userId, fileId);
+
+      if (!results.length) {
+        return res.status(404).json({ error: 'File not found' });
+      }
+
+      const file = results[0];
+
+      const dest = await resolveDestinationFolder(db, userId, destinationPath, file.cloud_account_id);
+      if (!dest && destinationPath !== '/') {
+        return res.status(404).json({ error: 'Destination folder not found' });
+      }
+
+      let adapter;
+      try {
+        adapter = await getAdapterForAccount(file.cloud_account_id);
+      } catch (e) {
+        return res.status(502).json({ error: 'Failed to initialize provider adapter' });
+      }
+      if (!adapter) {
+        return res.status(502).json({ error: 'Provider adapter not available' });
+      }
+
+      if (typeof adapter.copyFile !== 'function') {
+        return res.status(501).json({ error: 'Copy not supported by this provider' });
+      }
+
+      let copyResult;
+      try {
+        copyResult = await adapter.copyFile(file, dest?.remoteFileId || null);
+      } catch (e) {
+        return res.status(502).json({ error: `Copy failed: ${e.message}` });
+      }
+
+      const newVirtualPath = dest ? dest.virtualPath : '/';
+      const newRemoteParentId = dest?.remoteFileId || null;
+      const newId = randomUUID();
+      await db.prepare(`
+        INSERT INTO file_metadata (
+          id, user_id, virtual_path, file_name, is_folder, is_starred, size, mime_type,
+          cloud_account_id, remote_file_id, remote_parent_id, remote_created_time, remote_modified_time
+        ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `).run(
+        newId, userId, newVirtualPath, file.file_name, file.is_folder,
+        file.size, file.mime_type, file.cloud_account_id,
+        copyResult?.remoteFileId || `copy-${randomUUID()}`, newRemoteParentId
+      );
+
+      return res.json({ data: { success: true, id: newId } });
     } catch (error) {
       next(error);
     }
@@ -466,19 +834,103 @@ export function createFilesRouter() {
     }
   });
 
-  // GET /api/files/:id/download — needs adapter
+  // GET /api/files/:id/download
   router.get('/files/:id/download', async (req, res, next) => {
     try {
-      return res.status(501).json({ error: 'File download requires provider adapters' });
+      const db = getDb();
+      const userId = req.user.id;
+      const fileId = req.params.id;
+
+      const { results } = await db.prepare(`
+        SELECT fm.*, ca.provider, ca.email
+        FROM file_metadata fm
+        INNER JOIN cloud_accounts ca ON ca.id = fm.cloud_account_id
+        WHERE fm.user_id = ? AND fm.id = ? AND ca.status = 'active'
+      `).all(userId, fileId);
+
+      if (!results.length) {
+        return res.status(404).json({ error: 'File not found' });
+      }
+
+      const file = results[0];
+      if (file.is_folder) {
+        return res.status(400).json({ error: 'Cannot download a folder' });
+      }
+
+      let adapter;
+      try {
+        adapter = await getAdapterForAccount(file.cloud_account_id);
+      } catch (e) {
+        return res.status(502).json({ error: 'Failed to initialize provider adapter' });
+      }
+      if (!adapter) {
+        return res.status(502).json({ error: 'Provider adapter not available' });
+      }
+
+      let stream;
+      try {
+        stream = await adapter.getDownloadStream(file);
+      } catch (e) {
+        return res.status(502).json({ error: `Provider download failed: ${e.message}` });
+      }
+
+      const buffer = await collectStream(stream);
+      res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${file.file_name}"`);
+      res.send(buffer);
     } catch (error) {
       next(error);
     }
   });
 
-  // GET /api/files/:id/preview — needs adapter
+  // GET /api/files/:id/preview
   router.get('/files/:id/preview', async (req, res, next) => {
     try {
-      return res.status(501).json({ error: 'File preview requires provider adapters' });
+      const db = getDb();
+      const userId = req.user.id;
+      const fileId = req.params.id;
+
+      const { results } = await db.prepare(`
+        SELECT fm.*, ca.provider, ca.email
+        FROM file_metadata fm
+        INNER JOIN cloud_accounts ca ON ca.id = fm.cloud_account_id
+        WHERE fm.user_id = ? AND fm.id = ? AND ca.status = 'active'
+      `).all(userId, fileId);
+
+      if (!results.length) {
+        return res.status(404).json({ error: 'File not found' });
+      }
+
+      const file = results[0];
+      if (file.is_folder) {
+        return res.status(400).json({ error: 'Cannot preview a folder' });
+      }
+
+      if (!isPreviewable(file.mime_type)) {
+        return res.status(415).json({ error: 'File type not previewable' });
+      }
+
+      let adapter;
+      try {
+        adapter = await getAdapterForAccount(file.cloud_account_id);
+      } catch (e) {
+        return res.status(502).json({ error: 'Failed to initialize provider adapter' });
+      }
+      if (!adapter) {
+        return res.status(502).json({ error: 'Provider adapter not available' });
+      }
+
+      let stream;
+      try {
+        stream = await adapter.getDownloadStream(file);
+      } catch (e) {
+        return res.status(502).json({ error: `Provider download failed: ${e.message}` });
+      }
+
+      const buffer = await collectStream(stream);
+      res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
+      res.setHeader('Content-Disposition', 'inline');
+      res.send(buffer);
     } catch (error) {
       next(error);
     }
@@ -559,15 +1011,79 @@ export function createFilesRouter() {
     }
   });
 
-  // POST /api/files/folders — create folder (needs adapter)
+  // POST /api/files/folders — create folder
   router.post('/files/folders', async (req, res, next) => {
     try {
+      const db = getDb();
+      const userId = req.user.id;
       const body = await readJsonBody(req);
-      const { name } = body;
+      const { name, path: parentPath, cloudAccountId } = body;
+
       if (!name?.trim()) {
         return res.status(400).json({ error: 'Folder name is required' });
       }
-      return res.status(501).json({ error: 'Folder creation requires provider adapters' });
+
+      const normalizedParent = normalizePath(parentPath || '/');
+
+      let account;
+      if (cloudAccountId) {
+        account = await db.prepare(
+          'SELECT * FROM cloud_accounts WHERE id = ? AND user_id = ? AND status = ?'
+        ).get(cloudAccountId, userId, 'active');
+      } else {
+        const { results: siblings } = await db.prepare(`
+          SELECT ca.* FROM file_metadata fm
+          INNER JOIN cloud_accounts ca ON ca.id = fm.cloud_account_id
+          WHERE fm.user_id = ? AND fm.virtual_path = ? AND ca.status = 'active'
+          LIMIT 1
+        `).all(userId, normalizedParent);
+        account = siblings[0] || null;
+        if (!account) {
+          account = await db.prepare(
+            'SELECT * FROM cloud_accounts WHERE user_id = ? AND status = ? LIMIT 1'
+          ).get(userId, 'active');
+        }
+      }
+
+      if (!account) {
+        return res.status(400).json({ error: 'No active cloud account found' });
+      }
+
+      let adapter;
+      try {
+        adapter = await getAdapterForAccount(account.id);
+      } catch (e) {
+        return res.status(502).json({ error: 'Failed to initialize provider adapter' });
+      }
+      if (!adapter) {
+        return res.status(502).json({ error: 'Provider not supported' });
+      }
+
+      let remoteParentId = null;
+      if (normalizedParent !== '/') {
+        const dest = await resolveDestinationFolder(db, userId, normalizedParent, account.id);
+        if (dest) remoteParentId = dest.remoteFileId;
+      }
+
+      let result;
+      try {
+        result = await adapter.createFolder({ name: name.trim(), virtualPath: normalizedParent, remoteParentId });
+      } catch (e) {
+        return res.status(502).json({ error: `Folder creation failed: ${e.message}` });
+      }
+
+      const newId = randomUUID();
+      await db.prepare(`
+        INSERT INTO file_metadata (
+          id, user_id, virtual_path, file_name, is_folder, is_starred, size, mime_type,
+          cloud_account_id, remote_file_id, remote_parent_id, remote_created_time, remote_modified_time
+        ) VALUES (?, ?, ?, ?, 1, 0, 0, NULL, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `).run(
+        newId, userId, normalizedParent, name.trim(), account.id,
+        result.remoteFileId, result.remoteParentId || remoteParentId
+      );
+
+      return res.json({ data: { id: newId, file_name: name.trim(), virtual_path: normalizedParent } });
     } catch (error) {
       next(error);
     }
