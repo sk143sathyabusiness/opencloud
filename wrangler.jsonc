@@ -10,7 +10,16 @@
       "migrations_dir": "migrations"
     }
   ],
+  "kv_namespaces": [
+    {
+      "binding": "STATE",
+      "id": "replace-with-kv-namespace-id"
+    }
+  ],
   "vars": {
     "APP_MODE": "local"
+  },
+  "triggers": {
+    "crons": ["*/5 * * * *"]
   }
 }

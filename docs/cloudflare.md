@@ -158,30 +158,139 @@ npm test
 
 ---
 
+## API Endpoints (SP-2 Full Port)
+
+All endpoints are mounted under `/api` via Express 5 on the Cloudflare Worker.
+
+### Health
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/health` | Status check, returns `appMode` |
+| `POST` | `/api/sync/run` | Manual metadata sync trigger |
+
+### Auth
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/auth/me` | Current user info |
+| `POST` | `/api/auth/register` | Create account (hosted mode) |
+| `POST` | `/api/auth/login` | Login, sets session cookie |
+| `POST` | `/api/auth/logout` | Destroy session |
+
+### Accounts (Cloud Providers)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/accounts` | List connected accounts |
+| `GET` | `/api/accounts/:provider/status` | Provider connection status |
+| `GET` | `/api/accounts/:provider/connect` | Start OAuth flow |
+| `GET` | `/api/accounts/:provider/callback` | OAuth callback |
+| `DELETE` | `/api/accounts/:id` | Remove account |
+
+### Files
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/files` | List files (query: `path`, `provider`, `account_id`) |
+| `GET` | `/api/files/search` | Search files |
+| `GET` | `/api/files/trash` | List trashed files |
+| `GET` | `/api/files/duplicates` | Detect duplicates |
+| `POST` | `/api/files/star` | Star/unstar file |
+| `POST` | `/api/files/rename` | Rename file |
+| `POST` | `/api/files/move` | Move file(s) |
+| `POST` | `/api/files/copy` | Copy file |
+| `POST` | `/api/files/delete` | Soft-delete to trash |
+| `POST` | `/api/files/restore` | Restore from trash |
+| `POST` | `/api/files/folders` | Create folder |
+
+### Uploads
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/uploads/initiate` | Start upload session |
+| `POST` | `/api/uploads/:id/stream` | Stream upload (FormData) |
+| `POST` | `/api/uploads/:id/chunk` | Chunked upload |
+| `GET` | `/api/uploads/:id/progress` | Upload progress (SSE/poll) |
+| `DELETE` | `/api/uploads/:id` | Cancel upload |
+
+### Settings
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/settings` | Get user settings |
+| `PATCH` | `/api/settings` | Update setting |
+
+### Allocation
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/allocation` | Get allocation config |
+| `PATCH` | `/api/allocation` | Update allocation strategy |
+
+### Share
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/share` | Create share link |
+| `GET` | `/api/share` | List user's share links |
+| `DELETE` | `/api/share/:token` | Revoke share link |
+| `GET` | `/api/share/:token/info` | Public share info |
+| `GET` | `/api/share/:token/download` | Download shared file |
+
+---
+
 ## File Structure
 
 | File | Purpose |
 |------|---------|
-| `wrangler.jsonc` | Pages advanced-mode config, D1 binding, compatibility flags |
+| `wrangler.jsonc` | Pages advanced-mode config, D1 + KV bindings, compatibility flags |
 | `migrations/0001_init.sql` | D1 schema + seed (ground truth) |
 | `cloudflare/_worker.js` | Worker entry: routes `/api/*` → Express, else → ASSETS |
-| `cloudflare/appSlim.js` | Express app with health, files, share-info routes |
+| `cloudflare/app.js` | Full Express app: mounts all route groups |
+| `cloudflare/appSlim.js` | Legacy slim app (SP-1, superseded by `app.js`) |
 | `cloudflare/expressBridge.js` | `Request/Response → Express req/res` adapter |
 | `cloudflare/db.js` | `envStore` (AsyncLocalStorage) + `D1Compat` async statement API |
+| `cloudflare/middleware.js` | CORS, auth context, cookie helpers, error handler |
+| `cloudflare/kvStore.js` | Workers KV wrapper (get/set/delete with JSON + TTL) |
+| `cloudflare/routes/auth.js` | Auth routes (me, register, login, logout) |
+| `cloudflare/routes/accounts.js` | Account routes (list, connect, callback, delete, status) |
+| `cloudflare/routes/files.js` | File routes (list, search, star, rename, delete, move, copy, trash, duplicates) |
+| `cloudflare/routes/uploads.js` | Upload routes (initiate, stream, chunk, progress) |
+| `cloudflare/routes/settings.js` | Settings routes (get, update) |
+| `cloudflare/routes/allocation.js` | Allocation routes (get, update) |
+| `cloudflare/routes/share.js` | Share routes (create, list, revoke, info, download) |
+| `cloudflare/routes/health.js` | Health check + manual sync trigger |
+| `cloudflare/adapters/base.js` | Abstract adapter with Web Streams |
+| `cloudflare/adapters/google.js` | Google Drive adapter (raw REST API) |
+| `cloudflare/adapters/onedrive.js` | OneDrive adapter |
+| `cloudflare/adapters/dropbox.js` | Dropbox adapter |
+| `cloudflare/adapters/yandex.js` | Yandex adapter |
+| `cloudflare/adapters/s3.js` | S3 adapter (AWS SDK v3) |
+| `cloudflare/adapters/pcloud.js` | pCloud adapter |
+| `backend/src/config/crypto.js` | Async crypto module (PBKDF2, SHA-256, timing-safe compare) |
 | `scripts/pages-build.mjs` | Build script (vite + worker copy) |
+
+### Test Files
+
+| File | Purpose |
+|------|---------|
+| `cloudflare/tests/app.test.mjs` | Full app integration tests |
+| `cloudflare/tests/auth.test.mjs` | Auth route tests |
+| `cloudflare/tests/accounts.test.mjs` | Account route tests |
+| `cloudflare/tests/files.test.mjs` | File route tests |
+| `cloudflare/tests/uploads.test.mjs` | Upload route tests |
+| `cloudflare/tests/settings.test.mjs` | Settings/allocation tests |
+| `cloudflare/tests/share.test.mjs` | Share route tests |
+| `cloudflare/tests/health.test.mjs` | Health route tests |
+| `cloudflare/tests/crypto.test.mjs` | Crypto module unit tests |
+| `cloudflare/tests/kv.test.mjs` | KV store unit tests |
+| `cloudflare/tests/middleware.test.mjs` | Middleware unit tests |
+| `cloudflare/tests/bridge.test.mjs` | Express bridge tests |
+| `cloudflare/tests/db.test.mjs` | D1 transaction/batch tests |
+| `cloudflare/tests/worker.test.mjs` | Worker fetch handler tests |
 
 ---
 
-## Known Gaps (SP-1 handoff)
+## Known Gaps
 
 These are deferred to subsequent sub-projects:
 
-- **Full route surface (SP-2):** Only `/api/health`, `/api/files`, `/api/share/:token/info` are mounted. Auth, accounts, uploads, settings, allocation, sync — all come in SP-2 when the full `createApp()` is ported.
-- **WebSocket upload progress (SP-2+):** WS `/ws/uploads` not yet wired. Poll-based fallback documented in spec.
-- **Chunked >100MB uploads (SP-2+):** Large-file streaming upload support deferred.
-- **Provider adapters (SP-4):** Google Drive, OneDrive, Dropbox, Yandex, MEGA, pCloud, S3 — all ported in SP-4.
-- **OAuth flow (SP-4):** OAuth redirect handling and token storage.
-- **Cron sync (SP-5):** `node-cron` → Cloudflare Cron Triggers.
-- **Telegram integration (SP-5):** Bot token handling and file sync.
-- **MEGA/pCloud provider port (SP-6):** Email/password account connections.
-- **Vitest pool (SP-2):** Tests migrate from direct Miniflare API to `@cloudflare/vitest-pool-workers`.
+- **WebSocket upload progress:** WS `/ws/uploads` not yet wired. Poll-based fallback is used.
+- **Chunked >100MB uploads:** Large-file streaming upload support deferred.
+- **Cron sync:** `node-cron` → Cloudflare Cron Triggers (SP-5).
+- **Telegram integration:** Bot token handling and file sync (SP-5).
+- **MEGA provider:** Dropped from Cloudflare version (not compatible with Workers).
+- **Vitest pool:** Tests use direct Miniflare API; migration to `@cloudflare/vitest-pool-workers` deferred.
