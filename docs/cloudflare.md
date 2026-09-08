@@ -304,9 +304,9 @@ All endpoints are mounted under `/api` via Express 5 on the Cloudflare Worker.
 
 ## Known Gaps
 
-These are deferred to subsequent sub-projects:
+These are deferred or permanently unsupported:
 
 - **WebSocket upload progress:** WS `/ws/uploads` not yet wired. Poll-based fallback is used.
-- **MEGA provider:** Dropped from Cloudflare version (not compatible with Workers).
+- **MEGA provider:** Permanently unsupported on Workers. The megajs npm package depends on Node streams and custom crypto that cannot be cleanly ported. MEGA endpoints return HTTP 410. A custom Workers-native MEGA adapter is feasible (~1,150 lines) but deferred due to limited user base.
 - **invalid_token status:** `cloud_accounts.status` enum supports `'invalid_token'` but never set on refresh failure.
 - **Vitest pool:** Tests use direct Miniflare API; migration to `@cloudflare/vitest-pool-workers` deferred.
