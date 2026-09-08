@@ -474,6 +474,58 @@ export class GoogleDriveAdapter extends BaseAdapter {
     });
   }
 
+  async copyFile(fileRecord, destRemoteId) {
+    const response = await this.request(
+      `/files/${encodeURIComponent(fileRecord.remote_file_id)}/copy`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: fileRecord.file_name,
+          parents: destRemoteId ? [destRemoteId] : undefined,
+        }),
+      },
+    );
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error?.message || 'Failed to copy file on Google Drive');
+    }
+    return {
+      remoteFileId: data.id,
+      remoteParentId: data.parents?.[0] || destRemoteId || null,
+      size: Number(data.size || fileRecord.size || 0),
+      fileName: data.name || fileRecord.file_name,
+      mimeType: data.mimeType || fileRecord.mime_type,
+    };
+  }
+
+  async moveFile(fileRecord, destRemoteId) {
+    const sourceId = fileRecord.remote_file_id;
+    const body = {};
+    if (destRemoteId) body.addParents = destRemoteId;
+    if (fileRecord.remote_parent_id) body.removeParents = fileRecord.remote_parent_id;
+
+    const response = await this.request(
+      `/files/${encodeURIComponent(sourceId)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    );
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error?.message || 'Failed to move file on Google Drive');
+    }
+    return {
+      remoteFileId: data.id,
+      remoteParentId: data.parents?.[0] || destRemoteId || null,
+      size: Number(data.size || fileRecord.size || 0),
+      fileName: data.name || fileRecord.file_name,
+      mimeType: data.mimeType || fileRecord.mime_type,
+    };
+  }
+
   async deleteFile(fileRecord) {
     await this.request(`/files/${encodeURIComponent(fileRecord.remote_file_id)}`, {
       method: 'DELETE',

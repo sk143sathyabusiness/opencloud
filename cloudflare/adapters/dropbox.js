@@ -417,6 +417,54 @@ export class DropboxAdapter extends BaseAdapter {
     });
   }
 
+  async copyFile(fileRecord, destRemoteId) {
+    const fromPath = fileRecord.remote_file_id || joinDropboxPath(fileRecord.virtual_path, fileRecord.file_name);
+    const toPath = destRemoteId
+      ? joinDropboxPath(destRemoteId.endsWith('/') ? destRemoteId : `${destRemoteId}/`, fileRecord.file_name)
+      : joinDropboxPath('/', fileRecord.file_name);
+
+    const payload = await this.rpc('/files/copy_v2', {
+      from_path: fromPath,
+      to_path: toPath,
+      allow_shared_folder: true,
+      autorename: true,
+      allow_ownership_transfer: false,
+    });
+
+    const meta = payload.metadata || {};
+    return {
+      remoteFileId: meta.id || meta.path_lower || toPath,
+      remoteParentId: toVirtualPath(meta.path_display || meta.path_lower || toPath),
+      size: Number(meta.size || fileRecord.size || 0),
+      fileName: meta.name || fileRecord.file_name,
+      mimeType: fileRecord.mime_type,
+    };
+  }
+
+  async moveFile(fileRecord, destRemoteId) {
+    const fromPath = fileRecord.remote_file_id || joinDropboxPath(fileRecord.virtual_path, fileRecord.file_name);
+    const toPath = destRemoteId
+      ? joinDropboxPath(destRemoteId.endsWith('/') ? destRemoteId : `${destRemoteId}/`, fileRecord.file_name)
+      : joinDropboxPath('/', fileRecord.file_name);
+
+    const payload = await this.rpc('/files/move_v2', {
+      from_path: fromPath,
+      to_path: toPath,
+      allow_shared_folder: true,
+      autorename: false,
+      allow_ownership_transfer: false,
+    });
+
+    const meta = payload.metadata || {};
+    return {
+      remoteFileId: meta.id || meta.path_lower || toPath,
+      remoteParentId: toVirtualPath(meta.path_display || meta.path_lower || toPath),
+      size: Number(meta.size || fileRecord.size || 0),
+      fileName: meta.name || fileRecord.file_name,
+      mimeType: fileRecord.mime_type,
+    };
+  }
+
   async deleteFile(fileRecord) {
     await this.rpc('/files/delete_v2', {
       path: fileRecord.remote_file_id || joinDropboxPath(fileRecord.virtual_path, fileRecord.file_name),

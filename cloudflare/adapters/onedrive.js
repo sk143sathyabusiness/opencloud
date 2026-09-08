@@ -413,6 +413,58 @@ export class OneDriveAdapter extends BaseAdapter {
     });
   }
 
+  async copyFile(fileRecord, destRemoteId) {
+    const sourceId = fileRecord.remote_file_id;
+    const body = { name: fileRecord.file_name };
+    if (destRemoteId) body.parentReference = { id: destRemoteId };
+
+    const response = await this.requestGraph(
+      `https://graph.microsoft.com/v1.0/me/drive/items/${encodeURIComponent(sourceId)}/copy`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    );
+
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error?.message || 'Failed to copy file on OneDrive');
+
+    return {
+      remoteFileId: payload.id,
+      remoteParentId: payload.parentReference?.id || destRemoteId || null,
+      size: Number(payload.size || fileRecord.size || 0),
+      fileName: payload.name || fileRecord.file_name,
+      mimeType: payload.file?.mimeType || fileRecord.mime_type,
+    };
+  }
+
+  async moveFile(fileRecord, destRemoteId) {
+    const sourceId = fileRecord.remote_file_id;
+    const body = {};
+    if (destRemoteId) body.parentReference = { id: destRemoteId };
+
+    const response = await this.requestGraph(
+      `https://graph.microsoft.com/v1.0/me/drive/items/${encodeURIComponent(sourceId)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    );
+
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error?.message || 'Failed to move file on OneDrive');
+
+    return {
+      remoteFileId: payload.id,
+      remoteParentId: payload.parentReference?.id || destRemoteId || null,
+      size: Number(payload.size || fileRecord.size || 0),
+      fileName: payload.name || fileRecord.file_name,
+      mimeType: payload.file?.mimeType || fileRecord.mime_type,
+    };
+  }
+
   async deleteFile(fileRecord) {
     const response = await this.requestGraph(
       `https://graph.microsoft.com/v1.0/me/drive/items/${encodeURIComponent(fileRecord.remote_file_id)}`,

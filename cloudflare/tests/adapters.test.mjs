@@ -663,3 +663,166 @@ test('OneDriveAdapter uploadChunked uses simple upload for files <= 4MB', async 
     globalThis.fetch = originalFetch;
   }
 });
+
+// Base adapter copyFile/moveFile fallback tests
+
+test('BaseAdapter copyFile downloads then uploads to dest', async () => {
+  const encoder = new TextEncoder();
+  const fileContent = encoder.encode('hello world');
+  const readable = new ReadableStream({
+    start(controller) {
+      controller.enqueue(fileContent);
+      controller.close();
+    }
+  });
+
+  class TestAdapter extends BaseAdapter {
+    async getDownloadStream() { return readable; }
+    async uploadStream({ remoteParentId, fileName }) {
+      return { remoteFileId: `uploaded-${fileName}`, remoteParentId, size: 11, fileName };
+    }
+  }
+
+  const adapter = new TestAdapter(mockAccount);
+  const result = await adapter.copyFile(
+    { remote_file_id: 'src-1', file_name: 'test.txt', mime_type: 'text/plain', size: 11, virtual_path: '/' },
+    'dest-folder-id',
+  );
+
+  assert.equal(result.remoteFileId, 'uploaded-test.txt');
+  assert.equal(result.remoteParentId, 'dest-folder-id');
+});
+
+test('BaseAdapter moveFile copies then deletes source', async () => {
+  let deleteCalled = false;
+  const encoder = new TextEncoder();
+  const fileContent = encoder.encode('data');
+  const readable = new ReadableStream({
+    start(controller) {
+      controller.enqueue(fileContent);
+      controller.close();
+    }
+  });
+
+  class TestAdapter extends BaseAdapter {
+    async getDownloadStream() { return readable; }
+    async uploadStream({ fileName }) {
+      return { remoteFileId: `new-${fileName}`, size: 4, fileName };
+    }
+    async deleteFile() { deleteCalled = true; }
+  }
+
+  const adapter = new TestAdapter(mockAccount);
+  const result = await adapter.moveFile(
+    { remote_file_id: 'src-2', file_name: 'move.txt', mime_type: 'text/plain', size: 4, virtual_path: '/' },
+    'dest-id',
+  );
+
+  assert.equal(result.remoteFileId, 'new-move.txt');
+  assert.equal(deleteCalled, true);
+});
+
+test('BaseAdapter moveFile returns copy even if delete fails', async () => {
+  const encoder = new TextEncoder();
+  const readable = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode('x'));
+      controller.close();
+    }
+  });
+
+  class TestAdapter extends BaseAdapter {
+    async getDownloadStream() { return readable; }
+    async uploadStream({ fileName }) {
+      return { remoteFileId: `ok-${fileName}`, size: 1, fileName };
+    }
+    async deleteFile() { throw new Error('delete failed'); }
+  }
+
+  const adapter = new TestAdapter(mockAccount);
+  const result = await adapter.moveFile(
+    { remote_file_id: 'src-3', file_name: 'f.txt', mime_type: 'text/plain', size: 1, virtual_path: '/' },
+    null,
+  );
+  assert.equal(result.remoteFileId, 'ok-f.txt');
+});
+
+// pCloud inherits base copyFile/moveFile
+
+test('PCloudAdapter has copyFile and moveFile from base', () => {
+  const adapter = new PCloudAdapter(mockAccount, mockEnv);
+  assert.equal(typeof adapter.copyFile, 'function');
+  assert.equal(typeof adapter.moveFile, 'function');
+});
+
+// Google Drive native copy/move tests
+
+test('GoogleDriveAdapter copyFile calls files/{id}/copy', async () => {
+  const googleAccount = {
+    ...mockAccount,
+    encrypted_credentials: encryptJson({ clientId: 'c', clientSecret: 's', refreshToken: 'r' }),
+  };
+  const adapter = new GoogleDriveAdapter(googleAccount, mockEnv);
+  patchReadCredentials(adapter, { clientId: 'c', clientSecret: 's', refreshToken: 'r' });
+
+  let fetchCalls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts = {}) => {
+    fetchCalls.push({ url: String(url), method: opts.method, body: opts.body });
+    if (String(url).includes('oauth2.googleapis.com/token')) {
+      return new Response(JSON.stringify({ access_token: 'mock-token', expires_in: 3600 }), { status: 200 });
+    }
+    if (String(url).includes('/copy') && opts.method === 'POST') {
+      return new Response(JSON.stringify({ id: 'copy-1', name: 'copied.txt', parents: ['dest-1'] }), { status: 200 });
+    }
+    return new Response(JSON.stringify({}), { status: 404 });
+  };
+
+  try {
+    const result = await adapter.copyFile(
+      { remote_file_id: 'src-file', file_name: 'copied.txt', mime_type: 'text/plain', size: 100 },
+      'dest-1',
+    );
+    assert.equal(result.remoteFileId, 'copy-1');
+    assert.ok(fetchCalls.some((c) => c.url.includes('/files/src-file/copy') && c.method === 'POST'));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('GoogleDriveAdapter moveFile calls PATCH with addParents/removeParents', async () => {
+  const googleAccount = {
+    ...mockAccount,
+    encrypted_credentials: encryptJson({ clientId: 'c', clientSecret: 's', refreshToken: 'r' }),
+  };
+  const adapter = new GoogleDriveAdapter(googleAccount, mockEnv);
+  patchReadCredentials(adapter, { clientId: 'c', clientSecret: 's', refreshToken: 'r' });
+
+  let fetchCalls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts = {}) => {
+    fetchCalls.push({ url: String(url), method: opts.method, body: opts.body });
+    if (String(url).includes('oauth2.googleapis.com/token')) {
+      return new Response(JSON.stringify({ access_token: 'mock-token', expires_in: 3600 }), { status: 200 });
+    }
+    if (String(url).includes('/files/src-move') && opts.method === 'PATCH') {
+      return new Response(JSON.stringify({ id: 'src-move', name: 'moved.txt', parents: ['new-parent'] }), { status: 200 });
+    }
+    return new Response(JSON.stringify({}), { status: 404 });
+  };
+
+  try {
+    const result = await adapter.moveFile(
+      { remote_file_id: 'src-move', file_name: 'moved.txt', mime_type: 'text/plain', size: 50, remote_parent_id: 'old-parent' },
+      'new-parent',
+    );
+    assert.equal(result.remoteFileId, 'src-move');
+    const patchCall = fetchCalls.find((c) => c.url.includes('/files/src-move') && c.method === 'PATCH');
+    assert.ok(patchCall);
+    const body = JSON.parse(patchCall.body);
+    assert.equal(body.addParents, 'new-parent');
+    assert.equal(body.removeParents, 'old-parent');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

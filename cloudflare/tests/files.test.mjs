@@ -921,13 +921,24 @@ test('POST /api/files/:id/move returns 501 when adapter lacks moveFile', async (
     const accountId = await insertTestAccount(db, AUTH_USER.id);
     const fileId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'move.txt' });
 
-    const app = makeApp();
-    const res = await runExpress(app, new Request(`http://x/api/files/${fileId}/move`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ destinationPath: '/' }),
-    }), { user: AUTH_USER });
-    assert.equal(res.status, 501);
+    class NoMoveAdapter {
+      constructor(account) { this.account = account; }
+      async getDownloadStream() { return new ReadableStream({ start(c) { c.close(); } }); }
+      async createFolder({ name }) { return { remoteFileId: `mock-${Date.now()}`, fileName: name }; }
+    }
+
+    _setAdapterOverrides({ google_drive: NoMoveAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request(`http://x/api/files/${fileId}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ destinationPath: '/' }),
+      }), { user: AUTH_USER });
+      assert.equal(res.status, 501);
+    } finally {
+      _clearAdapterOverrides();
+    }
   });
 });
 
@@ -995,13 +1006,24 @@ test('POST /api/files/:id/copy returns 501 when adapter lacks copyFile', async (
     const accountId = await insertTestAccount(db, AUTH_USER.id);
     const fileId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'copy.txt' });
 
-    const app = makeApp();
-    const res = await runExpress(app, new Request(`http://x/api/files/${fileId}/copy`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ destinationPath: '/' }),
-    }), { user: AUTH_USER });
-    assert.equal(res.status, 501);
+    class NoCopyAdapter {
+      constructor(account) { this.account = account; }
+      async getDownloadStream() { return new ReadableStream({ start(c) { c.close(); } }); }
+      async createFolder({ name }) { return { remoteFileId: `mock-${Date.now()}`, fileName: name }; }
+    }
+
+    _setAdapterOverrides({ google_drive: NoCopyAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request(`http://x/api/files/${fileId}/copy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ destinationPath: '/' }),
+      }), { user: AUTH_USER });
+      assert.equal(res.status, 501);
+    } finally {
+      _clearAdapterOverrides();
+    }
   });
 });
 
@@ -1063,5 +1085,79 @@ test('GET /api/files?shared=1 returns 501', async () => {
     const app = makeApp();
     const res = await runExpress(app, new Request('http://x/api/files?shared=1'), { user: AUTH_USER });
     assert.equal(res.status, 501);
+  });
+});
+
+// --- Bulk move/copy partial failures ---
+
+class FailingMoveAdapter {
+  constructor(account) { this.account = account; }
+  async getDownloadStream() { return new ReadableStream({ start(c) { c.close(); } }); }
+  async createFolder({ name }) { return { remoteFileId: `mock-${Date.now()}`, fileName: name }; }
+  async moveFile(fileRecord) {
+    if (fileRecord.file_name === 'will-fail.txt') throw new Error('Provider move error');
+    return true;
+  }
+  async copyFile(fileRecord) {
+    if (fileRecord.file_name === 'will-fail.txt') throw new Error('Provider copy error');
+    return { remoteFileId: `copy-${Date.now()}` };
+  }
+}
+
+test('POST /api/files/bulk/move handles per-item errors without aborting batch', async () => {
+  await seedEnv(async () => {
+    const db = getDb();
+    const accountId = await insertTestAccount(db, AUTH_USER.id);
+    await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'target-folder', is_folder: 1, virtual_path: '/' });
+    const okId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'ok-file.txt', virtual_path: '/' });
+    const failId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'will-fail.txt', virtual_path: '/' });
+
+    _setAdapterOverrides({ google_drive: FailingMoveAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request('http://x/api/files/bulk/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [okId, failId], destinationPath: '/target-folder/' }),
+      }), { user: AUTH_USER });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.data.success, true);
+      assert.equal(body.data.moved, 1);
+      assert.equal(body.data.errors.length, 1);
+      assert.equal(body.data.errors[0].id, failId);
+      assert.ok(body.data.errors[0].error.includes('Provider move error'));
+    } finally {
+      _clearAdapterOverrides();
+    }
+  });
+});
+
+test('POST /api/files/bulk/copy handles per-item errors without aborting batch', async () => {
+  await seedEnv(async () => {
+    const db = getDb();
+    const accountId = await insertTestAccount(db, AUTH_USER.id);
+    await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'target-folder', is_folder: 1, virtual_path: '/' });
+    const okId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'ok-file.txt', virtual_path: '/' });
+    const failId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'will-fail.txt', virtual_path: '/' });
+
+    _setAdapterOverrides({ google_drive: FailingMoveAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request('http://x/api/files/bulk/copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [okId, failId], destinationPath: '/target-folder/' }),
+      }), { user: AUTH_USER });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.data.success, true);
+      assert.equal(body.data.copied, 1);
+      assert.equal(body.data.errors.length, 1);
+      assert.equal(body.data.errors[0].id, failId);
+      assert.ok(body.data.errors[0].error.includes('Provider copy error'));
+    } finally {
+      _clearAdapterOverrides();
+    }
   });
 });

@@ -514,6 +514,46 @@ export class S3Adapter extends BaseAdapter {
     await fetch(deleteUrl, { method: 'DELETE', headers: signedDelete });
   }
 
+  async copyFile(fileRecord, destRemoteId) {
+    const credentials = this.readCredentials();
+    const bucket = credentials.bucket;
+    const endpoint = this.getEndpoint();
+    const sourceKey = fileRecord.remote_file_id || toKey(fileRecord.virtual_path, fileRecord.file_name);
+    const destKey = destRemoteId
+      ? `${destRemoteId.replace(/\/+$/, '')}/${fileRecord.file_name}`
+      : toKey('/', fileRecord.file_name);
+
+    const url = `${endpoint}/${bucket}/${destKey}`;
+    const headers = {
+      'x-amz-copy-source': `/${bucket}/${sourceKey}`,
+    };
+    const signedHeaders = await signV4('PUT', url, headers, '', credentials);
+    const response = await fetch(url, { method: 'PUT', headers: signedHeaders });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`S3 copy failed: ${response.status} ${err}`);
+    }
+
+    return {
+      remoteFileId: destKey,
+      remoteParentId: destRemoteId || '/',
+      size: Number(fileRecord.size || 0),
+      fileName: fileRecord.file_name,
+      mimeType: fileRecord.mime_type,
+    };
+  }
+
+  async moveFile(fileRecord, destRemoteId) {
+    const newFile = await this.copyFile(fileRecord, destRemoteId);
+    try {
+      await this.deleteFile(fileRecord);
+    } catch (e) {
+      /* best-effort delete after copy */
+    }
+    return newFile;
+  }
+
   async deleteFile(fileRecord) {
     const credentials = this.readCredentials();
     const key = fileRecord.remote_file_id || toKey(fileRecord.virtual_path, fileRecord.file_name);

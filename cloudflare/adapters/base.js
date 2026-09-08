@@ -38,6 +38,25 @@ export class BaseAdapter {
     throw new Error('setFileStarred() must be implemented by subclass');
   }
 
+  async copyFile(fileRecord, destRemoteId) {
+    const stream = await this.getDownloadStream(fileRecord);
+    const size = fileRecord.size || undefined;
+    return this.uploadStream({
+      stream,
+      size,
+      fileName: fileRecord.file_name,
+      mimeType: fileRecord.mime_type || 'application/octet-stream',
+      remoteParentId: destRemoteId,
+      virtualPath: fileRecord.virtual_path,
+    });
+  }
+
+  async moveFile(fileRecord, destRemoteId) {
+    const newFile = await this.copyFile(fileRecord, destRemoteId);
+    try { await this.deleteFile(fileRecord); } catch (e) { /* best-effort delete */ }
+    return newFile;
+  }
+
   async uploadChunked({ chunks, fileName, mimeType, virtualPath, remoteParentId, totalSize }) {
     const collectedChunks = [];
     for await (const chunk of chunks) {

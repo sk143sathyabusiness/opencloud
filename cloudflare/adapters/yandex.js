@@ -261,6 +261,50 @@ export class YandexAdapter extends BaseAdapter {
     });
   }
 
+  async copyFile(fileRecord, destRemoteId) {
+    const sourcePath = this.resolvePath(fileRecord);
+    const destPath = destRemoteId || '/';
+    const normalizedDest = destRemoteId
+      ? destRemoteId.endsWith('/') ? destRemoteId.slice(0, -1) : destRemoteId
+      : '';
+    const toPath = `${normalizedDest}/${fileRecord.file_name}`;
+
+    await this.request('/resources/copy', {
+      method: 'POST',
+      query: { from: sourcePath, path: toPath, overwrite: 'false' },
+    });
+
+    return {
+      remoteFileId: toPath,
+      remoteParentId: normalizeVirtualPath(destPath),
+      size: Number(fileRecord.size || 0),
+      fileName: fileRecord.file_name,
+      mimeType: fileRecord.mime_type,
+    };
+  }
+
+  async moveFile(fileRecord, destRemoteId) {
+    const sourcePath = this.resolvePath(fileRecord);
+    const destPath = destRemoteId || '/';
+    const normalizedDest = destRemoteId
+      ? destRemoteId.endsWith('/') ? destRemoteId.slice(0, -1) : destRemoteId
+      : '';
+    const toPath = `${normalizedDest}/${fileRecord.file_name}`;
+
+    await this.request('/resources/move', {
+      method: 'POST',
+      query: { from: sourcePath, path: toPath, overwrite: 'false' },
+    });
+
+    return {
+      remoteFileId: toPath,
+      remoteParentId: normalizeVirtualPath(destPath),
+      size: Number(fileRecord.size || 0),
+      fileName: fileRecord.file_name,
+      mimeType: fileRecord.mime_type,
+    };
+  }
+
   async deleteFile(fileRecord) {
     await this.request('/resources', {
       method: 'DELETE',
