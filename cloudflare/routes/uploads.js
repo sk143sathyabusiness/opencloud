@@ -37,6 +37,9 @@ export function createUploadsRouter() {
 
   router.use(requireAppUser);
 
+  const DEFAULT_UPLOAD_MAX_BYTES = 104857600;  // 100 MB
+  const DEFAULT_MAX_CHUNK_BYTES = 26214400;    // 25 MB
+
   // POST /api/upload/init — initialize upload session
   router.post('/upload/init', async (req, res, next) => {
     try {
@@ -48,8 +51,17 @@ export function createUploadsRouter() {
       }
 
       const db = getDb();
+      const env = envStore.getStore();
       const userId = req.user.id;
       const fileSize = Number(size);
+
+      const maxBytes = env?.UPLOAD_MAX_BYTES ? Number(env.UPLOAD_MAX_BYTES) : DEFAULT_UPLOAD_MAX_BYTES;
+      if (fileSize > maxBytes) {
+        return res.status(413).json({
+          error: 'File size exceeds limit',
+          data: { maxBytes, requestedBytes: fileSize },
+        });
+      }
 
       const { results: accounts } = await db.prepare(
         "SELECT * FROM cloud_accounts WHERE user_id = ? AND status = 'active' ORDER BY created_at ASC LIMIT 1"
@@ -129,6 +141,15 @@ export function createUploadsRouter() {
       const chunkId = randomUUID();
       const chunkData = await file.arrayBuffer();
       const chunkSize = chunkData.byteLength;
+
+      const maxChunkBytes = env?.MAX_CHUNK_BYTES ? Number(env.MAX_CHUNK_BYTES) : DEFAULT_MAX_CHUNK_BYTES;
+      if (chunkSize > maxChunkBytes) {
+        return res.status(413).json({
+          error: 'Chunk size exceeds limit',
+          data: { maxBytes: maxChunkBytes, requestedBytes: chunkSize },
+        });
+      }
+
       const now = new Date().toISOString();
 
       const useR2 = env?.R2 != null;
@@ -244,6 +265,14 @@ export function createUploadsRouter() {
         }
 
         await db.prepare('DELETE FROM upload_chunks WHERE upload_id = ?').run(upload_id);
+      }
+
+      const maxBytes = env?.UPLOAD_MAX_BYTES ? Number(env.UPLOAD_MAX_BYTES) : DEFAULT_UPLOAD_MAX_BYTES;
+      if (assembled.byteLength > maxBytes) {
+        return res.status(413).json({
+          error: 'Assembled file exceeds size limit',
+          data: { maxBytes, requestedBytes: assembled.byteLength },
+        });
       }
 
       await db.prepare(
@@ -475,6 +504,14 @@ export function createUploadsRouter() {
         }
 
         await db.prepare('DELETE FROM upload_chunks WHERE upload_id = ?').run(upload_id);
+      }
+
+      const maxBytes = env?.UPLOAD_MAX_BYTES ? Number(env.UPLOAD_MAX_BYTES) : DEFAULT_UPLOAD_MAX_BYTES;
+      if (assembled.byteLength > maxBytes) {
+        return res.status(413).json({
+          error: 'Assembled file exceeds size limit',
+          data: { maxBytes, requestedBytes: assembled.byteLength },
+        });
       }
 
       await db.prepare(

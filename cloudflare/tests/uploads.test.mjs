@@ -393,3 +393,174 @@ test('POST /api/upload/chunk stores chunk and updates bytes', async () => {
     assert.equal(session.bytes_uploaded, 5);
   });
 });
+
+// --- Size cap enforcement ---
+
+test('POST /api/upload/init returns 413 when file size exceeds UPLOAD_MAX_BYTES', async () => {
+  const maxBytes = 1000;
+  await seedEnv(async () => {
+    const db = getDb();
+    await db.prepare(
+      'INSERT INTO cloud_accounts (id, user_id, email, provider, encrypted_credentials, total_space, used_space, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run('ca-1', AUTH_USER.id, 'test@google.com', 'google_drive', '{}', 1000000, 0, 'active');
+
+    const app = makeApp();
+    const req = new Request('http://x/api/upload/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_name: 'huge.bin', size: maxBytes + 1 }),
+    });
+    const res = await runExpress(app, req, { user: AUTH_USER });
+    assert.equal(res.status, 413);
+    const body = await res.json();
+    assert.ok(body.error.includes('exceeds limit'));
+    assert.equal(body.data.maxBytes, maxBytes);
+    assert.equal(body.data.requestedBytes, maxBytes + 1);
+  }, { UPLOAD_MAX_BYTES: String(maxBytes) });
+});
+
+test('POST /api/upload/init accepts file size at UPLOAD_MAX_BYTES', async () => {
+  const maxBytes = 1000;
+  await seedEnv(async () => {
+    const db = getDb();
+    await db.prepare(
+      'INSERT INTO cloud_accounts (id, user_id, email, provider, encrypted_credentials, total_space, used_space, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run('ca-1', AUTH_USER.id, 'test@google.com', 'google_drive', '{}', 1000000, 0, 'active');
+
+    const app = makeApp();
+    const req = new Request('http://x/api/upload/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_name: 'exact.bin', size: maxBytes }),
+    });
+    const res = await runExpress(app, req, { user: AUTH_USER });
+    assert.equal(res.status, 201);
+  }, { UPLOAD_MAX_BYTES: String(maxBytes) });
+});
+
+test('POST /api/upload/init uses default limit when env var not set', async () => {
+  await seedEnv(async () => {
+    const db = getDb();
+    await db.prepare(
+      'INSERT INTO cloud_accounts (id, user_id, email, provider, encrypted_credentials, total_space, used_space, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run('ca-1', AUTH_USER.id, 'test@google.com', 'google_drive', '{}', 1000000, 0, 'active');
+
+    const app = makeApp();
+    const req = new Request('http://x/api/upload/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_name: 'default.bin', size: 104857601 }),
+    });
+    const res = await runExpress(app, req, { user: AUTH_USER });
+    assert.equal(res.status, 413);
+    const body = await res.json();
+    assert.equal(body.data.maxBytes, 104857600);
+  });
+});
+
+test('POST /api/upload/chunk returns 413 when chunk exceeds MAX_CHUNK_BYTES', async () => {
+  const maxChunk = 100;
+  await seedEnv(async () => {
+    const db = getDb();
+    await db.prepare(
+      'INSERT INTO cloud_accounts (id, user_id, email, provider, encrypted_credentials, total_space, used_space, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run('ca-1', AUTH_USER.id, 'test@google.com', 'google_drive', '{}', 1000000, 0, 'active');
+
+    const sessionId = 'test-chunk-cap-1';
+    await db.prepare(`
+      INSERT INTO upload_sessions (
+        id, user_id, file_name, file_size, mime_type, virtual_path,
+        cloud_account_id, status, session_token, bytes_uploaded
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(sessionId, AUTH_USER.id, 'upload.bin', 1000, 'application/octet-stream', '/', 'ca-1', 'uploading', 'tok', 0);
+
+    // Create a chunk that exceeds the limit
+    const oversized = new Uint8Array(maxChunk + 1);
+    oversized.fill(0x42);
+    const file = new File([oversized], 'chunk.bin', { type: 'application/octet-stream' });
+    const formData = new FormData();
+    formData.set('upload_id', sessionId);
+    formData.set('chunk_index', '0');
+    formData.set('file', file);
+
+    const req = new Request('http://x/api/upload/chunk', {
+      method: 'POST',
+      body: formData,
+    });
+    const app = makeApp();
+    const res = await runExpress(app, req, { user: AUTH_USER });
+    assert.equal(res.status, 413);
+    const body = await res.json();
+    assert.ok(body.error.includes('exceeds limit'));
+    assert.equal(body.data.maxBytes, maxChunk);
+    assert.equal(body.data.requestedBytes, maxChunk + 1);
+  }, { MAX_CHUNK_BYTES: String(maxChunk) });
+});
+
+test('POST /api/upload/chunk accepts chunk at MAX_CHUNK_BYTES', async () => {
+  const maxChunk = 100;
+  await seedEnv(async () => {
+    const db = getDb();
+    await db.prepare(
+      'INSERT INTO cloud_accounts (id, user_id, email, provider, encrypted_credentials, total_space, used_space, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run('ca-1', AUTH_USER.id, 'test@google.com', 'google_drive', '{}', 1000000, 0, 'active');
+
+    const sessionId = 'test-chunk-exact-1';
+    await db.prepare(`
+      INSERT INTO upload_sessions (
+        id, user_id, file_name, file_size, mime_type, virtual_path,
+        cloud_account_id, status, session_token, bytes_uploaded
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(sessionId, AUTH_USER.id, 'upload.bin', 1000, 'application/octet-stream', '/', 'ca-1', 'uploading', 'tok', 0);
+
+    const exactChunk = new Uint8Array(maxChunk);
+    exactChunk.fill(0x42);
+    const file = new File([exactChunk], 'chunk.bin', { type: 'application/octet-stream' });
+    const formData = new FormData();
+    formData.set('upload_id', sessionId);
+    formData.set('chunk_index', '0');
+    formData.set('file', file);
+
+    const req = new Request('http://x/api/upload/chunk', {
+      method: 'POST',
+      body: formData,
+    });
+    const app = makeApp();
+    const res = await runExpress(app, req, { user: AUTH_USER });
+    assert.equal(res.status, 200);
+  }, { MAX_CHUNK_BYTES: String(maxChunk) });
+});
+
+test('POST /api/upload/chunk uses default limit when env var not set', async () => {
+  await seedEnv(async () => {
+    const db = getDb();
+    await db.prepare(
+      'INSERT INTO cloud_accounts (id, user_id, email, provider, encrypted_credentials, total_space, used_space, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run('ca-1', AUTH_USER.id, 'test@google.com', 'google_drive', '{}', 1000000, 0, 'active');
+
+    const sessionId = 'test-chunk-default-1';
+    await db.prepare(`
+      INSERT INTO upload_sessions (
+        id, user_id, file_name, file_size, mime_type, virtual_path,
+        cloud_account_id, status, session_token, bytes_uploaded
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(sessionId, AUTH_USER.id, 'upload.bin', 100000000, 'application/octet-stream', '/', 'ca-1', 'uploading', 'tok', 0);
+
+    // 26214401 bytes = default MAX_CHUNK_BYTES + 1
+    const oversized = new Uint8Array(26214401);
+    oversized.fill(0x42);
+    const file = new File([oversized], 'chunk.bin', { type: 'application/octet-stream' });
+    const formData = new FormData();
+    formData.set('upload_id', sessionId);
+    formData.set('chunk_index', '0');
+    formData.set('file', file);
+
+    const req = new Request('http://x/api/upload/chunk', {
+      method: 'POST',
+      body: formData,
+    });
+    const app = makeApp();
+    const res = await runExpress(app, req, { user: AUTH_USER });
+    assert.equal(res.status, 413);
+  });
+});

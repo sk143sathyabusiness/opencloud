@@ -77,6 +77,8 @@ Set these in the Cloudflare Pages dashboard or via `wrangler.toml` / `vars`.
 | `DROPBOX_CLIENT_ID` / `DROPBOX_CLIENT_SECRET` / `DROPBOX_REDIRECT_URI` | — | Dropbox OAuth (SP-4+). |
 | `YANDEX_CLIENT_ID` / `YANDEX_CLIENT_SECRET` / `YANDEX_REDIRECT_URI` | — | Yandex OAuth (SP-4+). |
 | `TELEGRAM_BOT_TOKEN` | — | Telegram integration (SP-5+). |
+| `UPLOAD_MAX_BYTES` | `104857600` (100 MB) | Maximum total upload size in bytes. Uploads exceeding this are rejected with 413. |
+| `MAX_CHUNK_BYTES` | `26214400` (25 MB) | Maximum per-chunk size in bytes. Chunks exceeding this are rejected with 413. |
 
 > **No `.env` on Pages.** `dotenv` only loads in the Node server process (`backend/src/server.js`). On Workers, env vars come from Pages dashboard or Wrangler vars.
 
