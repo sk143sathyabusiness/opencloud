@@ -1,5 +1,6 @@
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import { envStore } from '../db.js';
+import { env as backendEnv } from '../../backend/src/config/env.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,7 +20,7 @@ export async function seedEnv(fn, extraEnv = {}) {
 	try {
 		await mf.ready;
 		const bindings = await mf.getBindings();
-		const env = { ...bindings, ...extraEnv };
+		const env = { ...bindings, ...extraEnv, encryptionKey: backendEnv.encryptionKey };
 		const migrationSql = fs.readFileSync(path.resolve(__dirname, '../../migrations/0001_init.sql'), 'utf8');
 		await env.DB.exec(migrationSql.replace(/\r?\n/g, ' '));
 		await envStore.run(env, async () => fn(env));

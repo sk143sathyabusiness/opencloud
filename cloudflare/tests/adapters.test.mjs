@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test, mock } from 'node:test';
+import { encryptJson } from '../../backend/src/utils/crypto.js';
 import { BaseAdapter } from '../adapters/base.js';
 import { GoogleDriveAdapter } from '../adapters/google.js';
 import { OneDriveAdapter } from '../adapters/onedrive.js';
@@ -13,7 +14,7 @@ const mockAccount = {
   user_id: 'u1',
   provider: 'google-drive',
   email: 'test@example.com',
-  encrypted_credentials: JSON.stringify({ clientId: 'c', clientSecret: 's', refreshToken: 'r' }),
+  encrypted_credentials: encryptJson({ clientId: 'c', clientSecret: 's', refreshToken: 'r' }),
   total_space: 1000000,
   used_space: 500000,
 };
@@ -235,7 +236,7 @@ test('BaseAdapter uploadChunked rejects empty chunks', async () => {
 test('GoogleDriveAdapter uploadChunked uses resumable for files > 5MB', async () => {
   const googleAccount = {
     ...mockAccount,
-    encrypted_credentials: JSON.stringify({ clientId: 'c', clientSecret: 's', refreshToken: 'r' }),
+    encrypted_credentials: encryptJson({ clientId: 'c', clientSecret: 's', refreshToken: 'r' }),
   };
 
   const adapter = new GoogleDriveAdapter(googleAccount, mockEnv);
@@ -296,7 +297,7 @@ test('GoogleDriveAdapter uploadChunked uses resumable for files > 5MB', async ()
 test('GoogleDriveAdapter uploadChunked uses multipart for files <= 5MB', async () => {
   const googleAccount = {
     ...mockAccount,
-    encrypted_credentials: JSON.stringify({ clientId: 'c', clientSecret: 's', refreshToken: 'r' }),
+    encrypted_credentials: encryptJson({ clientId: 'c', clientSecret: 's', refreshToken: 'r' }),
   };
 
   const adapter = new GoogleDriveAdapter(googleAccount, mockEnv);
@@ -343,7 +344,7 @@ test('S3Adapter uploadChunked uses multipart for files > 5MB', async () => {
   const s3Account = {
     ...mockAccount,
     provider: 's3',
-    encrypted_credentials: JSON.stringify({
+    encrypted_credentials: encryptJson({
       accessKeyId: 'AKIATEST',
       secretAccessKey: 'secret123',
       bucket: 'my-bucket',
@@ -414,7 +415,7 @@ test('S3Adapter uploadChunked uses simple PUT for files <= 5MB', async () => {
   const s3Account = {
     ...mockAccount,
     provider: 's3',
-    encrypted_credentials: JSON.stringify({
+    encrypted_credentials: encryptJson({
       accessKeyId: 'AKIATEST',
       secretAccessKey: 'secret123',
       bucket: 'my-bucket',
@@ -463,7 +464,7 @@ test('DropboxAdapter uploadChunked uses session for files > 150MB', async () => 
   const dropboxAccount = {
     ...mockAccount,
     provider: 'dropbox',
-    encrypted_credentials: JSON.stringify({ clientId: 'c', clientSecret: 's', refreshToken: 'r' }),
+    encrypted_credentials: encryptJson({ clientId: 'c', clientSecret: 's', refreshToken: 'r' }),
   };
 
   const adapter = new DropboxAdapter(dropboxAccount, mockEnv);
@@ -519,7 +520,7 @@ test('DropboxAdapter uploadChunked uses simple upload for files <= 150MB', async
   const dropboxAccount = {
     ...mockAccount,
     provider: 'dropbox',
-    encrypted_credentials: JSON.stringify({ clientId: 'c', clientSecret: 's', refreshToken: 'r' }),
+    encrypted_credentials: encryptJson({ clientId: 'c', clientSecret: 's', refreshToken: 'r' }),
   };
 
   const adapter = new DropboxAdapter(dropboxAccount, mockEnv);
@@ -563,7 +564,7 @@ test('OneDriveAdapter uploadChunked uses session for files > 4MB', async () => {
   const onedriveAccount = {
     ...mockAccount,
     provider: 'onedrive',
-    encrypted_credentials: JSON.stringify({ clientId: 'c', clientSecret: 's', refreshToken: 'r', tenantId: 't' }),
+    encrypted_credentials: encryptJson({ clientId: 'c', clientSecret: 's', refreshToken: 'r', tenantId: 't' }),
   };
 
   const adapter = new OneDriveAdapter(onedriveAccount, mockEnv);
@@ -622,7 +623,7 @@ test('OneDriveAdapter uploadChunked uses simple upload for files <= 4MB', async 
   const onedriveAccount = {
     ...mockAccount,
     provider: 'onedrive',
-    encrypted_credentials: JSON.stringify({ clientId: 'c', clientSecret: 's', refreshToken: 'r', tenantId: 't' }),
+    encrypted_credentials: encryptJson({ clientId: 'c', clientSecret: 's', refreshToken: 'r', tenantId: 't' }),
   };
 
   const adapter = new OneDriveAdapter(onedriveAccount, mockEnv);

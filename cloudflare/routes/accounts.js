@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { getDb } from '../db.js';
 import { kvGet, kvSet, kvDelete } from '../kvStore.js';
 import { env } from '../../backend/src/config/env.js';
+import { encryptJson } from '../../backend/src/utils/crypto.js';
 import { requireAppUser } from '../middleware.js';
 
 const OAUTH_STATE_TTL = 600;
@@ -355,7 +356,7 @@ export function createAccountsRouter() {
           used_space = excluded.used_space,
           status = excluded.status,
           updated_at = CURRENT_TIMESTAMP
-      `).run(randomUUID(), authState.userId, profile.email, 'google_drive', JSON.stringify(credentials), profile.totalSpace, profile.usedSpace);
+      `).run(randomUUID(), authState.userId, profile.email, 'google_drive', encryptJson(credentials), profile.totalSpace, profile.usedSpace);
 
       frontendUrl.searchParams.set('google', 'connected');
       return res.redirect(frontendUrl.toString());
@@ -413,7 +414,7 @@ export function createAccountsRouter() {
           used_space = excluded.used_space,
           status = excluded.status,
           updated_at = CURRENT_TIMESTAMP
-      `).run(randomUUID(), authState.userId, profile.email, 'onedrive', JSON.stringify(credentials), profile.totalSpace, profile.usedSpace);
+      `).run(randomUUID(), authState.userId, profile.email, 'onedrive', encryptJson(credentials), profile.totalSpace, profile.usedSpace);
 
       frontendUrl.searchParams.set('onedrive', 'connected');
       return res.redirect(frontendUrl.toString());
@@ -471,7 +472,7 @@ export function createAccountsRouter() {
           used_space = excluded.used_space,
           status = excluded.status,
           updated_at = CURRENT_TIMESTAMP
-      `).run(randomUUID(), authState.userId, profile.email, 'dropbox', JSON.stringify(credentials), profile.totalSpace, profile.usedSpace);
+      `).run(randomUUID(), authState.userId, profile.email, 'dropbox', encryptJson(credentials), profile.totalSpace, profile.usedSpace);
 
       frontendUrl.searchParams.set('dropbox', 'connected');
       return res.redirect(frontendUrl.toString());
@@ -524,7 +525,7 @@ export function createAccountsRouter() {
           used_space = excluded.used_space,
           status = excluded.status,
           updated_at = CURRENT_TIMESTAMP
-      `).run(randomUUID(), authState.userId, profile.email, 'yandex', JSON.stringify(credentials), profile.totalSpace, profile.usedSpace);
+      `).run(randomUUID(), authState.userId, profile.email, 'yandex', encryptJson(credentials), profile.totalSpace, profile.usedSpace);
 
       frontendUrl.searchParams.set('yandex', 'connected');
       return res.redirect(frontendUrl.toString());
@@ -569,7 +570,7 @@ export function createAccountsRouter() {
           used_space = excluded.used_space,
           status = excluded.status,
           updated_at = CURRENT_TIMESTAMP
-      `).run(randomUUID(), req.user.id, email, 's3', JSON.stringify(credentials), resolvedTotal, 0);
+      `).run(randomUUID(), req.user.id, email, 's3', encryptJson(credentials), resolvedTotal, 0);
 
       const account = await db.prepare('SELECT * FROM cloud_accounts WHERE user_id = ? AND provider = ? AND email = ?').get(req.user.id, 's3', email);
       res.json({ data: { account, profile: { email, provider: 's3' } } });
@@ -658,7 +659,7 @@ export function createAccountsRouter() {
           used_space = excluded.used_space,
           status = excluded.status,
           updated_at = CURRENT_TIMESTAMP
-      `).run(randomUUID(), req.user.id, loginResult.email, 'pcloud', JSON.stringify(credentials), loginResult.totalSpace, loginResult.usedSpace);
+      `).run(randomUUID(), req.user.id, loginResult.email, 'pcloud', encryptJson(credentials), loginResult.totalSpace, loginResult.usedSpace);
 
       const account = await db.prepare('SELECT * FROM cloud_accounts WHERE user_id = ? AND provider = ? AND email = ?').get(req.user.id, 'pcloud', loginResult.email);
       res.json({ data: { account, profile: { email: loginResult.email, totalSpace: loginResult.totalSpace, usedSpace: loginResult.usedSpace } } });
