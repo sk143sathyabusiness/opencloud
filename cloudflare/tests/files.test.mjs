@@ -572,7 +572,7 @@ test('GET /api/files/:id returns 404 for nonexistent file', async () => {
 
 // --- POST /api/files/bulk/download ---
 
-test('POST /api/files/bulk/download returns 501', async () => {
+test('POST /api/files/bulk/download returns 400 without ids', async () => {
   await seedEnv(async () => {
     const app = makeApp();
     const res = await runExpress(app, new Request('http://x/api/files/bulk/download', {
@@ -580,7 +580,84 @@ test('POST /api/files/bulk/download returns 501', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [] }),
     }), { user: AUTH_USER });
-    assert.equal(res.status, 501);
+    assert.equal(res.status, 400);
+  });
+});
+
+test('POST /api/files/bulk/download returns ZIP with correct entries', async () => {
+  await seedEnv(async () => {
+    const db = getDb();
+    const accountId = await insertTestAccount(db, AUTH_USER.id);
+    await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'alpha.txt', size: 5 });
+    await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'beta.txt', size: 4 });
+
+    _setAdapterOverrides({ google_drive: MockAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request('http://x/api/files/bulk/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: ['nonexistent-id'] }),
+      }), { user: AUTH_USER });
+      // nonexistent IDs go into errors.txt
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get('content-type'), 'application/zip');
+      assert.equal(res.headers.get('content-disposition'), 'attachment; filename="omnicloud-download.zip"');
+    } finally {
+      _clearAdapterOverrides();
+    }
+  });
+});
+
+test('POST /api/files/bulk/download streams ZIP with file entries', async () => {
+  await seedEnv(async () => {
+    const db = getDb();
+    const accountId = await insertTestAccount(db, AUTH_USER.id);
+    const fid1 = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'doc1.txt', size: 11 });
+    const fid2 = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'doc2.txt', size: 11 });
+
+    _setAdapterOverrides({ google_drive: MockAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request('http://x/api/files/bulk/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [fid1, fid2] }),
+      }), { user: AUTH_USER });
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get('content-type'), 'application/zip');
+
+      // Verify ZIP structure: PK signature
+      const buf = Buffer.from(await res.arrayBuffer());
+      assert.equal(buf[0], 0x50); // 'P'
+      assert.equal(buf[1], 0x4B); // 'K'
+      assert.equal(buf[2], 0x03);
+      assert.equal(buf[3], 0x04);
+
+      // Should contain both file names in the ZIP
+      const text = buf.toString('latin1');
+      assert.ok(text.includes('doc1.txt'), 'ZIP should contain doc1.txt');
+      assert.ok(text.includes('doc2.txt'), 'ZIP should contain doc2.txt');
+    } finally {
+      _clearAdapterOverrides();
+    }
+  });
+});
+
+test('POST /api/files/bulk/download includes errors.txt for unresolvable files', async () => {
+  await seedEnv(async () => {
+    const app = makeApp();
+    const res = await runExpress(app, new Request('http://x/api/files/bulk/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: ['totally-fake-id'] }),
+    }), { user: AUTH_USER });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'application/zip');
+
+    const buf = Buffer.from(await res.arrayBuffer());
+    const text = buf.toString('latin1');
+    assert.ok(text.includes('errors.txt'), 'ZIP should contain errors.txt for unresolvable files');
   });
 });
 

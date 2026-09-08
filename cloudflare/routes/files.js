@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { randomUUID } from 'crypto';
 import { getDb, envStore } from '../db.js';
 import { requireAppUser } from '../middleware.js';
+import { createZipStreamWriter } from '../zipWriter.js';
 
 // --- Adapter override mechanism (for testing) ---
 let _adapterOverrides = null;
@@ -451,9 +452,134 @@ export function createFilesRouter() {
     }
   });
 
-  // POST /api/files/bulk/download — return 501 for now (complex streaming ZIP)
-  router.post('/files/bulk/download', (req, res) => {
-    res.status(501).json({ error: 'Bulk download requires streaming ZIP support, not yet implemented on Workers' });
+  // POST /api/files/bulk/download — streaming ZIP archive
+  router.post('/files/bulk/download', async (req, res, next) => {
+    try {
+      const db = getDb();
+      const userId = req.user.id;
+      const body = await readJsonBody(req);
+      const ids = Array.isArray(body.ids) ? body.ids.filter(Boolean) : [];
+
+      if (!ids.length) {
+        return res.status(400).json({ error: 'At least one file id is required' });
+      }
+
+      // Resolve all IDs to leaf files (expand folders recursively)
+      const leafFiles = [];
+      const errors = [];
+
+      async function expandId(id) {
+        const { results } = await db.prepare(`
+          SELECT fm.*, ca.provider, ca.email
+          FROM file_metadata fm
+          INNER JOIN cloud_accounts ca ON ca.id = fm.cloud_account_id
+          WHERE fm.user_id = ? AND fm.id = ? AND ca.status = 'active'
+        `).all(userId, id);
+
+        if (!results.length) {
+          errors.push(`File not found: ${id}`);
+          return;
+        }
+
+        const file = results[0];
+        if (file.is_folder) {
+          // Recursively expand folder contents
+          const folderPath = joinPath(file.virtual_path, file.file_name);
+          const { results: children } = await db.prepare(`
+            SELECT fm.*, ca.provider, ca.email
+            FROM file_metadata fm
+            INNER JOIN cloud_accounts ca ON ca.id = fm.cloud_account_id
+            WHERE fm.user_id = ? AND fm.virtual_path = ? AND ca.status = 'active'
+          `).all(userId, folderPath);
+
+          for (const child of children) {
+            if (child.is_folder) {
+              await expandId(child.id);
+            } else {
+              leafFiles.push(child);
+            }
+          }
+        } else {
+          leafFiles.push(file);
+        }
+      }
+
+      for (const id of ids) {
+        await expandId(id);
+      }
+
+      // Build ZIP stream
+      const zipWriter = createZipStreamWriter();
+
+      // Track used names to avoid collisions across adapters
+      const seenNames = new Map();
+
+      function uniqueZipName(baseName) {
+        if (!seenNames.has(baseName)) {
+          seenNames.set(baseName, 0);
+          return baseName;
+        }
+        const count = seenNames.get(baseName) + 1;
+        seenNames.set(baseName, count);
+        const dotIdx = baseName.lastIndexOf('.');
+        const name = dotIdx > 0 ? baseName.slice(0, dotIdx) : baseName;
+        const ext = dotIdx > 0 ? baseName.slice(dotIdx) : '';
+        return `${name}_${count}${ext}`;
+      }
+
+      // Write each file to ZIP
+      for (const file of leafFiles) {
+        try {
+          const adapter = await getAdapterForAccount(file.cloud_account_id);
+          if (!adapter) {
+            errors.push(`Provider not available for: ${file.file_name}`);
+            continue;
+          }
+          if (typeof adapter.getDownloadStream !== 'function') {
+            errors.push(`Download not supported for: ${file.file_name}`);
+            continue;
+          }
+
+          const stream = await adapter.getDownloadStream(file);
+          const zipName = uniqueZipName(file.file_name);
+          await zipWriter.writeEntry(zipName, stream, file.size);
+        } catch (e) {
+          errors.push(`Failed to download ${file.file_name}: ${e.message}`);
+        }
+      }
+
+      // Write errors.txt if there were any errors
+      if (errors.length > 0) {
+        const encoder = new TextEncoder();
+        const errorText = encoder.encode(errors.join('\n') + '\n');
+        const errorStream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(errorText);
+            controller.close();
+          }
+        });
+        await zipWriter.writeEntry('errors.txt', errorStream, errorText.byteLength);
+      }
+
+      const zipStream = zipWriter.finalize();
+
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', 'attachment; filename="omnicloud-download.zip"');
+
+      // Pipe the ReadableStream to Express response
+      const reader = zipStream.getReader();
+      async function pump() {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(Buffer.from(value));
+        }
+        res.end();
+      }
+      await pump();
+    } catch (error) {
+      next(error);
+    }
   });
 
   // POST /api/files/bulk/move
