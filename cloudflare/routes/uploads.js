@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { getDb, envStore } from '../db.js';
 import { requireAppUser } from '../middleware.js';
 import { kvSet, kvGet, kvDelete } from '../kvStore.js';
+import { putStagedChunk, getStagedChunks, deleteStaged } from '../staging.js';
 
 function getState() {
   const store = envStore.getStore();
@@ -114,6 +115,7 @@ export function createUploadsRouter() {
       }
 
       const db = getDb();
+      const env = envStore.getStore();
       const userId = req.user.id;
 
       const session = await db.prepare(
@@ -129,10 +131,16 @@ export function createUploadsRouter() {
       const chunkSize = chunkData.byteLength;
       const now = new Date().toISOString();
 
-      await db.prepare(`
-        INSERT INTO upload_chunks (id, upload_id, chunk_index, chunk_data, chunk_size, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(chunkId, uploadId, chunkIndex, new Uint8Array(chunkData), chunkSize, now);
+      const useR2 = env?.R2 != null;
+
+      if (useR2) {
+        await putStagedChunk(env, uploadId, chunkIndex, chunkData);
+      } else {
+        await db.prepare(`
+          INSERT INTO upload_chunks (id, upload_id, chunk_index, chunk_data, chunk_size, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(chunkId, uploadId, chunkIndex, new Uint8Array(chunkData), chunkSize, now);
+      }
 
       const newBytesUploaded = (session.bytes_uploaded || 0) + chunkSize;
       await db.prepare(
@@ -144,6 +152,7 @@ export function createUploadsRouter() {
         const kvSession = await kvGet(state, `upload:${uploadId}`);
         if (kvSession) {
           kvSession.bytesUploaded = newBytesUploaded;
+          if (useR2) kvSession.useR2 = true;
           if (!kvSession.chunks) kvSession.chunks = [];
           kvSession.chunks.push({ index: chunkIndex, chunkId, size: chunkSize });
           await kvSet(state, `upload:${uploadId}`, kvSession);
@@ -172,6 +181,7 @@ export function createUploadsRouter() {
       }
 
       const db = getDb();
+      const env = envStore.getStore();
       const userId = req.user.id;
 
       const session = await db.prepare(
@@ -186,31 +196,60 @@ export function createUploadsRouter() {
         return res.json({ data: { status: 'already_completed' } });
       }
 
-      const { results: chunks } = await db.prepare(
-        'SELECT * FROM upload_chunks WHERE upload_id = ? ORDER BY chunk_index ASC'
-      ).all(upload_id);
-
-      if (!chunks.length) {
-        return res.status(400).json({ error: 'No chunks uploaded' });
+      let useR2 = false;
+      const state = getState();
+      if (state) {
+        const kvSession = await kvGet(state, `upload:${upload_id}`);
+        if (kvSession?.useR2) useR2 = true;
       }
 
-      const assembled = new Uint8Array(session.file_size);
-      let offset = 0;
-      for (const chunk of chunks) {
-        const chunkData = new Uint8Array(chunk.chunk_data);
-        assembled.set(chunkData, offset);
-        offset += chunkData.byteLength;
-      }
-
+      let chunkCount;
+      let assembled;
       const now = new Date().toISOString();
+
+      if (useR2 && env?.R2) {
+        const stagedChunks = await getStagedChunks(env, upload_id);
+        if (!stagedChunks.length) {
+          return res.status(400).json({ error: 'No chunks uploaded' });
+        }
+        chunkCount = stagedChunks.length;
+        assembled = new Uint8Array(session.file_size);
+        let offset = 0;
+        for (const chunk of stagedChunks) {
+          const reader = chunk.body.getReader();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            assembled.set(value, offset);
+            offset += value.byteLength;
+          }
+        }
+        await deleteStaged(env, upload_id);
+      } else {
+        const { results: chunks } = await db.prepare(
+          'SELECT * FROM upload_chunks WHERE upload_id = ? ORDER BY chunk_index ASC'
+        ).all(upload_id);
+
+        if (!chunks.length) {
+          return res.status(400).json({ error: 'No chunks uploaded' });
+        }
+
+        chunkCount = chunks.length;
+        assembled = new Uint8Array(session.file_size);
+        let offset = 0;
+        for (const chunk of chunks) {
+          const chunkData = new Uint8Array(chunk.chunk_data);
+          assembled.set(chunkData, offset);
+          offset += chunkData.byteLength;
+        }
+
+        await db.prepare('DELETE FROM upload_chunks WHERE upload_id = ?').run(upload_id);
+      }
 
       await db.prepare(
         "UPDATE upload_sessions SET status = 'completed', updated_at = ? WHERE id = ?"
       ).run(now, upload_id);
 
-      await db.prepare('DELETE FROM upload_chunks WHERE upload_id = ?').run(upload_id);
-
-      const state = getState();
       if (state) {
         await kvDelete(state, `upload:${upload_id}`);
       }
@@ -218,7 +257,7 @@ export function createUploadsRouter() {
       return res.json({
         data: {
           upload_id, status: 'completed',
-          bytes_assembled: assembled.byteLength, chunk_count: chunks.length,
+          bytes_assembled: assembled.byteLength, chunk_count: chunkCount,
         },
       });
     } catch (error) {
@@ -373,6 +412,7 @@ export function createUploadsRouter() {
       }
 
       const db = getDb();
+      const env = envStore.getStore();
       const userId = req.user.id;
 
       const session = await db.prepare(
@@ -387,31 +427,60 @@ export function createUploadsRouter() {
         return res.json({ data: { status: 'already_completed' } });
       }
 
-      const { results: chunks } = await db.prepare(
-        'SELECT * FROM upload_chunks WHERE upload_id = ? ORDER BY chunk_index ASC'
-      ).all(upload_id);
-
-      if (!chunks.length) {
-        return res.status(400).json({ error: 'No chunks uploaded' });
+      let useR2 = false;
+      const state = getState();
+      if (state) {
+        const kvSession = await kvGet(state, `upload:${upload_id}`);
+        if (kvSession?.useR2) useR2 = true;
       }
 
-      const assembled = new Uint8Array(session.file_size);
-      let offset = 0;
-      for (const chunk of chunks) {
-        const chunkData = new Uint8Array(chunk.chunk_data);
-        assembled.set(chunkData, offset);
-        offset += chunkData.byteLength;
-      }
-
+      let chunkCount;
+      let assembled;
       const now = new Date().toISOString();
+
+      if (useR2 && env?.R2) {
+        const stagedChunks = await getStagedChunks(env, upload_id);
+        if (!stagedChunks.length) {
+          return res.status(400).json({ error: 'No chunks uploaded' });
+        }
+        chunkCount = stagedChunks.length;
+        assembled = new Uint8Array(session.file_size);
+        let offset = 0;
+        for (const chunk of stagedChunks) {
+          const reader = chunk.body.getReader();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            assembled.set(value, offset);
+            offset += value.byteLength;
+          }
+        }
+        await deleteStaged(env, upload_id);
+      } else {
+        const { results: chunks } = await db.prepare(
+          'SELECT * FROM upload_chunks WHERE upload_id = ? ORDER BY chunk_index ASC'
+        ).all(upload_id);
+
+        if (!chunks.length) {
+          return res.status(400).json({ error: 'No chunks uploaded' });
+        }
+
+        chunkCount = chunks.length;
+        assembled = new Uint8Array(session.file_size);
+        let offset = 0;
+        for (const chunk of chunks) {
+          const chunkData = new Uint8Array(chunk.chunk_data);
+          assembled.set(chunkData, offset);
+          offset += chunkData.byteLength;
+        }
+
+        await db.prepare('DELETE FROM upload_chunks WHERE upload_id = ?').run(upload_id);
+      }
 
       await db.prepare(
         "UPDATE upload_sessions SET status = 'completed', updated_at = ? WHERE id = ?"
       ).run(now, upload_id);
 
-      await db.prepare('DELETE FROM upload_chunks WHERE upload_id = ?').run(upload_id);
-
-      const state = getState();
       if (state) {
         await kvDelete(state, `upload:${upload_id}`);
       }
@@ -419,7 +488,7 @@ export function createUploadsRouter() {
       return res.json({
         data: {
           upload_id, status: 'completed',
-          bytes_assembled: assembled.byteLength, chunk_count: chunks.length,
+          bytes_assembled: assembled.byteLength, chunk_count: chunkCount,
         },
       });
     } catch (error) {

@@ -16,6 +16,12 @@
       "id": "replace-with-kv-namespace-id"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "R2",
+      "bucket_name": "opencloud-staging"
+    }
+  ],
   "vars": {
     "APP_MODE": "local"
   },
