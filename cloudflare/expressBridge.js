@@ -37,7 +37,7 @@ function parseCookies(header = '') {
 	return Object.fromEntries(String(header || '').split(';').map((c) => c.trim()).filter(Boolean).map((c) => { const i = c.indexOf('='); return i === -1 ? [c, ''] : [c.slice(0, i), decodeURIComponent(c.slice(i + 1))]; }));
 }
 
-export function createBridgeRequest(request, user) {
+export function createBridgeRequest(request, user, env) {
 	const url = new URL(request.url);
 	const headers = Object.fromEntries(request.headers.entries());
 	const bridgeReq = {
@@ -52,13 +52,14 @@ export function createBridgeRequest(request, user) {
 		cookies: parseCookies(headers.cookie),
 		user,
 		_webRequest: request,
+		_env: env,
 		get req() { return this; },
 	};
 	return bridgeReq;
 }
 
-export async function runExpress(app, request, { user } = {}) {
-	const req = createBridgeRequest(request, user);
+export async function runExpress(app, request, { user, env } = {}) {
+	const req = createBridgeRequest(request, user, env);
 	const res = new BridgeResponse();
 	try {
 		app(req, res, () => {});

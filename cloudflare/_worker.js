@@ -1,10 +1,10 @@
 import { envStore } from './db.js';
-import { createSlimApp } from './appSlim.js';
+import { createApp } from './app.js';
 import { runExpress } from './expressBridge.js';
-import { LOCAL_USER_ID } from '../backend/src/config/constants.js';
+import { LOCAL_USER_ID, LOCAL_USER_EMAIL } from '../backend/src/config/constants.js';
 
-const app = createSlimApp();
-const localUser = { id: LOCAL_USER_ID, email: 'local@omnicloud.local' };
+const app = createApp();
+const localUser = { id: LOCAL_USER_ID, email: LOCAL_USER_EMAIL, is_local: true };
 
 export default {
 	async fetch(request, env) {
@@ -13,7 +13,7 @@ export default {
 			if (url.pathname.startsWith('/api/')) {
 				const appMode = env.APP_MODE ?? 'local';
 				const user = appMode === 'local' ? localUser : null;
-				return runExpress(app, request, { user });
+				return runExpress(app, request, { user, env });
 			}
 			return env.ASSETS.fetch(request);
 		});

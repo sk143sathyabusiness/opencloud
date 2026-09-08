@@ -38,6 +38,10 @@ export const env = {
 	quotaHardLimitEnabled: process.env.QUOTA_HARD_LIMIT_ENABLED !== 'false',
 };
 
+export function setEnv(overrides) {
+	Object.assign(env, overrides);
+}
+
 export function redactEnv() {
 	return {
 		port: env.port,
