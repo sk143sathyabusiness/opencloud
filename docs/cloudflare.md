@@ -286,13 +286,28 @@ All endpoints are mounted under `/api` via Express 5 on the Cloudflare Worker.
 
 ---
 
+## Provider Capabilities (SP-4 complete)
+
+| Provider | OAuth | Upload | Chunked | Download | Move | Copy | Shared | Quota |
+|----------|-------|--------|---------|----------|------|------|--------|-------|
+| Google Drive | ✅ | ✅ | ✅ resumable | ✅ stream | ✅ native | ✅ native | ✅ listSharedWithMe | ✅ |
+| OneDrive | ✅ | ✅ | ✅ session | ✅ stream | ✅ native | ✅ native | ✅ listSharedWithMe | ✅ |
+| Dropbox | ✅ | ✅ | ✅ session | ✅ stream | ✅ native | ✅ native | — | ✅ |
+| Yandex | ✅ | ✅ | ✅ simple | ✅ stream | ✅ native | ✅ native | — | ✅ |
+| S3 | — | ✅ | ✅ multipart | ✅ stream | ✅ copy+del | ✅ native | — | ✅ |
+| pCloud | — | ✅ | ✅ simple | ✅ stream | ✅ base | ✅ base | — | ✅ |
+
+- **Credential encryption:** AES-256-GCM via `encryptJson`/`decryptJson`. All account writes encrypted.
+- **Token persistence:** Yandex/pCloud refreshed tokens persisted to D1 (failure-resilient).
+- **S3 custom endpoints:** All operations use `getEndpoint()` + `forcePathStyle` (MinIO/R2-compatible).
+
 ## Known Gaps
 
 These are deferred to subsequent sub-projects:
 
 - **WebSocket upload progress:** WS `/ws/uploads` not yet wired. Poll-based fallback is used.
-- **Chunked >100MB uploads:** Large-file streaming upload support deferred.
 - **Cron sync:** `node-cron` → Cloudflare Cron Triggers (SP-5).
 - **Telegram integration:** Bot token handling and file sync (SP-5).
 - **MEGA provider:** Dropped from Cloudflare version (not compatible with Workers).
+- **invalid_token status:** `cloud_accounts.status` enum supports `'invalid_token'` but never set on refresh failure.
 - **Vitest pool:** Tests use direct Miniflare API; migration to `@cloudflare/vitest-pool-workers` deferred.
