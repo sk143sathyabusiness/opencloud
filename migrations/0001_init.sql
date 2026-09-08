@@ -116,4 +116,34 @@ CREATE TABLE IF NOT EXISTS users (
     ON user_settings(user_id, key);
   CREATE INDEX IF NOT EXISTS idx_trash_user_deleted_at ON trash(user_id, deleted_at);
 
-INSERT OR IGNORE INTO users (id, email, password_hash, is_local) VALUES ('local-default-user', 'local@omnicloud.local', '', 1);
+  CREATE TABLE IF NOT EXISTS upload_sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    file_size INTEGER NOT NULL,
+    mime_type TEXT,
+    virtual_path TEXT NOT NULL DEFAULT '/',
+    remote_parent_id TEXT,
+    cloud_account_id TEXT,
+    status TEXT NOT NULL DEFAULT 'initialized',
+    session_token TEXT NOT NULL,
+    bytes_uploaded INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS upload_chunks (
+    id TEXT PRIMARY KEY,
+    upload_id TEXT NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    chunk_data BLOB NOT NULL,
+    chunk_size INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(upload_id) REFERENCES upload_sessions(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_upload_sessions_user ON upload_sessions(user_id);
+  CREATE INDEX IF NOT EXISTS idx_upload_chunks_session ON upload_chunks(upload_id);
+
+  INSERT OR IGNORE INTO users (id, email, password_hash, is_local) VALUES ('local-default-user', 'local@omnicloud.local', '', 1);
