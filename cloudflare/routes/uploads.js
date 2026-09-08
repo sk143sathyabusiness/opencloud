@@ -57,6 +57,18 @@ export function createUploadsRouter() {
   const DEFAULT_UPLOAD_MAX_BYTES = 104857600;  // 100 MB
   const DEFAULT_MAX_CHUNK_BYTES = 26214400;    // 25 MB
 
+  // Backward-compatible aliases (frontend calls /uploads/initiate and /uploads/:uploadId/stream)
+  router.all('/uploads/initiate', requireAppUser, async (req, res, next) => {
+    req.url = '/upload/init';
+    req.method = 'POST';
+    next();
+  });
+  router.all('/uploads/:uploadId/stream', requireAppUser, async (req, res, next) => {
+    req.url = '/upload/chunk';
+    req.method = 'POST';
+    next();
+  });
+
   // POST /api/upload/init — initialize upload session
   router.post('/upload/init', async (req, res, next) => {
     try {
@@ -80,15 +92,78 @@ export function createUploadsRouter() {
         });
       }
 
-      const { results: accounts } = await db.prepare(
-        "SELECT * FROM cloud_accounts WHERE user_id = ? AND status = 'active' ORDER BY created_at ASC LIMIT 1"
-      ).all(userId);
+      // Space allocation: read strategy and select best account
+      const ALLOCATION_STRATEGIES = ['round_robin', 'weighted_round_robin', 'least_used', 'most_free', 'manual'];
+      const strategyRaw = (await db.prepare(
+        "SELECT value FROM user_settings WHERE user_id = ? AND key = 'allocation_strategy'"
+      ).get(userId))?.value;
+      const allocationStrategy = ALLOCATION_STRATEGIES.includes(strategyRaw) ? strategyRaw : 'round_robin';
 
-      if (!accounts.length) {
-        return res.status(507).json({ error: 'No active cloud accounts \u2014 connect one first' });
+      const orderRaw = (await db.prepare(
+        "SELECT value FROM user_settings WHERE user_id = ? AND key = 'allocation_order'"
+      ).get(userId))?.value;
+      let allocationOrder = [];
+      if (orderRaw) {
+        try { allocationOrder = JSON.parse(orderRaw).filter((id) => typeof id === 'string'); } catch {}
       }
 
-      const account = accounts[0];
+      const { results: allActiveAccounts } = await db.prepare(
+        "SELECT * FROM cloud_accounts WHERE user_id = ? AND status = 'active'"
+      ).all(userId);
+      if (!allActiveAccounts.length) {
+        return res.status(507).json({ error: 'No active cloud accounts — connect one first' });
+      }
+
+      // Apply allocation order
+      const byId = new Map(allActiveAccounts.map((a) => [a.id, a]));
+      const ordered = [];
+      for (const id of allocationOrder) {
+        if (byId.has(id)) { ordered.push(byId.get(id)); byId.delete(id); }
+      }
+      [...byId.values()].sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || ''))).forEach((a) => ordered.push(a));
+
+      // Enrich with freeSpace for sorting strategies
+      const enriched = ordered.map((a) => ({
+        ...a,
+        _freeSpace: Math.max(0, (Number(a.total_space) || 0) - (Number(a.used_space) || 0)),
+        _usedRatio: (Number(a.total_space) || 0) > 0 ? (Number(a.used_space) || 0) / (Number(a.total_space) || 0) : 1,
+      }));
+
+      let account;
+      switch (allocationStrategy) {
+        case 'most_free':
+          account = enriched.sort((a, b) => b._freeSpace - a._freeSpace)[0];
+          break;
+        case 'least_used':
+          account = enriched.sort((a, b) => a._usedRatio - b._usedRatio)[0];
+          break;
+        case 'round_robin': {
+          const rrRaw = (await db.prepare(
+            "SELECT value FROM user_settings WHERE user_id = ? AND key = 'allocation_rr_cursor'"
+          ).get(userId))?.value;
+          const cursor = parseInt(rrRaw, 10) || 0;
+          const count = enriched.length;
+          let chosen = enriched[cursor % count];
+          // Try to find an account with free space, up to full rotation
+          for (let step = 0; step < count; step++) {
+            const idx = (cursor + step) % count;
+            if (enriched[idx]._freeSpace > 0) { chosen = enriched[idx]; break; }
+          }
+          const nextCursor = (enriched.indexOf(chosen) + 1) % count;
+          await db.prepare(`
+            INSERT INTO user_settings (id, user_id, key, value, updated_at)
+            VALUES (?, ?, 'allocation_rr_cursor', ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+          `).run(crypto.randomUUID(), userId, String(nextCursor));
+          account = chosen;
+          break;
+        }
+        case 'weighted_round_robin':
+        case 'manual':
+        default:
+          account = enriched[0];
+          break;
+      }
       const path = normalizePath(virtual_path);
       const sessionId = randomUUID();
       const sessionToken = randomUUID();

@@ -16,7 +16,7 @@ export function createSettingsRouter() {
       for (const row of rows.results || rows) {
         settings[row.key] = row.value;
       }
-      res.json({ settings });
+      res.json({ data: settings });
     } catch (error) {
       next(error);
     }

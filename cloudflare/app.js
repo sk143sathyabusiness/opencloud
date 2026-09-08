@@ -1,5 +1,11 @@
 import express from 'express';
-import { attachAuthContext, requireAppUser } from './middleware.js';
+import { attachAuthContext, requireAppUser, corsHeaders } from './middleware.js';
+
+let _env = {};
+try {
+  const envMod = await import('../backend/src/config/env.js');
+  _env = envMod.env || {};
+} catch {}
 import { createAuthRouter } from './routes/auth.js';
 import { createAccountsRouter } from './routes/accounts.js';
 import { createFilesRouter } from './routes/files.js';
@@ -16,6 +22,19 @@ export function createApp() {
 
   app.use(attachAuthContext);
 
+  // CORS middleware
+  app.use((req, res, next) => {
+    const origin = _env.corsOrigin || '*';
+    const headers = corsHeaders(origin);
+    for (const [key, value] of Object.entries(headers)) {
+      res.setHeader(key, value);
+    }
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
+    next();
+  });
+
   app.use('/api', createHealthRouter());
   app.use('/api', createAuthRouter());
   app.use('/api', createAccountsRouter());
@@ -26,6 +45,13 @@ export function createApp() {
   app.use('/api', createShareRouter());
   app.use('/api', createSyncRouter());
   app.use('/api', createTelegramRouter());
+
+  // Global error handler
+  app.use((err, _req, res, _next) => {
+    const status = err.status || err.statusCode || 500;
+    const message = err.message || 'Internal server error';
+    res.status(status).json({ error: message });
+  });
 
   return app;
 }

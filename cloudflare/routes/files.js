@@ -144,7 +144,7 @@ export function createFilesRouter() {
     try {
       const db = getDb();
       const userId = req.user.id;
-      const { path, search, starred, recent, shared, limit } = req.query;
+      const { path, search, starred, recent, shared, limit, provider, type, accountId } = req.query;
 
       if (search) {
         const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 200));
@@ -154,6 +154,20 @@ export function createFilesRouter() {
 
         const where = ['fm.user_id = ?', "ca.status = 'active'"];
         const params = [userId];
+
+        if (provider) {
+          where.push('ca.provider = ?');
+          params.push(provider);
+        }
+        if (accountId) {
+          where.push('fm.cloud_account_id = ?');
+          params.push(accountId);
+        }
+        if (type) {
+          const isFolder = type === 'folder';
+          where.push('fm.is_folder = ?');
+          params.push(isFolder ? 1 : 0);
+        }
 
         const tokenClauses = tokens.map(() => `(
           fm.file_name LIKE ? ESCAPE '\\'

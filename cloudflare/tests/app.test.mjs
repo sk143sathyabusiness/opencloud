@@ -169,7 +169,7 @@ test('GET /api/settings returns defaults for local user', async () => {
 		});
 		assert.equal(res.status, 200);
 		const body = await res.json();
-		assert.ok(body.settings);
+		assert.ok(body.data);
 	});
 });
 
