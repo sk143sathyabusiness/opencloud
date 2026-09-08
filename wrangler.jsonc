@@ -1,31 +1,26 @@
 {
-  "name": "opencloud",
-  "compatibility_date": "2025-12-01",
-  "compatibility_flags": ["nodejs_compat"],
-  "pages_build_output_dir": "frontend/dist",
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "opencloud",
-      "migrations_dir": "migrations"
-    }
-  ],
-  "kv_namespaces": [
-    {
-      "binding": "STATE",
-      "id": "replace-with-kv-namespace-id"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "R2",
-      "bucket_name": "opencloud-staging"
-    }
-  ],
-  "vars": {
-    "APP_MODE": "local"
-  },
-  "triggers": {
-    "crons": ["*/5 * * * *"]
-  }
+	"name": "opencloud",
+	"compatibility_date": "2025-12-01",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"pages_build_output_dir": "frontend/dist",
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "opencloud",
+			"database_id": "5fe27861-86b4-4706-ae11-cccb444d5ca1",
+			"migrations_dir": "migrations"
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "STATE",
+			"id": "859f342e7cc74517a6664370eab93fb8",
+			"remote": true
+		}
+	],
+	"vars": {
+		"APP_MODE": "local"
+	}
 }
