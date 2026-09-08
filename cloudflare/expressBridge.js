@@ -61,7 +61,7 @@ export async function runExpress(app, request, { user } = {}) {
 	const req = createBridgeRequest(request, user);
 	const res = new BridgeResponse();
 	try {
-		app(req, res);
+		app(req, res, () => {});
 	} catch (err) {
 		res.status(500).json({ error: err?.message || 'Internal server error' });
 	}
