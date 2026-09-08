@@ -1,7 +1,62 @@
 import { Router } from 'express';
-import { getDb } from '../db.js';
+import { getDb, envStore } from '../db.js';
 import { generateToken, hashToken, verifyPassword as cryptoVerifyPassword, hashPassword as cryptoHashPassword } from '../../backend/src/config/crypto.js';
 import { requireAppUser } from '../middleware.js';
+
+// --- Adapter factory (for download streaming) ---
+let _adapterOverrides = null;
+export function _setAdapterOverrides(map) { _adapterOverrides = map; }
+export function _clearAdapterOverrides() { _adapterOverrides = null; }
+
+const ADAPTER_IMPORTERS = {
+  google_drive: () => import('../adapters/google.js'),
+  onedrive: () => import('../adapters/onedrive.js'),
+  dropbox: () => import('../adapters/dropbox.js'),
+  yandex: () => import('../adapters/yandex.js'),
+  s3: () => import('../adapters/s3.js'),
+  pcloud: () => import('../adapters/pcloud.js'),
+};
+
+const ADAPTER_CLASS_NAMES = {
+  google_drive: 'GoogleDriveAdapter',
+  onedrive: 'OneDriveAdapter',
+  dropbox: 'DropboxAdapter',
+  yandex: 'YandexAdapter',
+  s3: 'S3Adapter',
+  pcloud: 'PCloudAdapter',
+};
+
+async function getAdapterForAccount(accountId) {
+  const db = getDb();
+  const account = await db.prepare('SELECT * FROM cloud_accounts WHERE id = ?').get(accountId);
+  if (!account) return null;
+
+  if (_adapterOverrides && _adapterOverrides[account.provider]) {
+    const AdapterClass = _adapterOverrides[account.provider];
+    return new AdapterClass(account);
+  }
+
+  const importer = ADAPTER_IMPORTERS[account.provider];
+  if (!importer) return null;
+
+  const mod = await importer();
+  const AdapterClass = mod[ADAPTER_CLASS_NAMES[account.provider]];
+  if (!AdapterClass) return null;
+
+  const env = envStore.getStore();
+  return new AdapterClass(account, env);
+}
+
+async function collectStream(stream) {
+  const chunks = [];
+  const reader = stream.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks);
+}
 
 function linkUrl(token) {
   return `/s/${token}`;
@@ -165,8 +220,36 @@ export function createShareRouter() {
         }
       }
 
-      // Provider adapters not yet ported — return 501
-      return res.status(501).json({ error: 'Download not yet supported — provider adapters not implemented' });
+      let adapter;
+      try {
+        adapter = await getAdapterForAccount(link.cloud_account_id);
+      } catch (e) {
+        return res.status(502).json({ error: 'Failed to initialize provider adapter' });
+      }
+      if (!adapter) {
+        return res.status(502).json({ error: 'Reconnect this provider' });
+      }
+
+      let stream;
+      try {
+        stream = await adapter.getDownloadStream({
+          remote_file_id: link.remote_file_id,
+          file_name: link.file_name,
+          mime_type: link.mime_type,
+        });
+      } catch (e) {
+        if (e.message?.includes('invalid_token') || e.message?.includes('token')) {
+          return res.status(502).json({ error: 'Reconnect this provider' });
+        }
+        return res.status(502).json({ error: `Provider download failed: ${e.message}` });
+      }
+
+      await touchShareLink(req.params.token);
+
+      const buffer = await collectStream(stream);
+      res.setHeader('Content-Type', link.mime_type || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${link.file_name}"`);
+      res.send(buffer);
     } catch (error) {
       next(error);
     }
