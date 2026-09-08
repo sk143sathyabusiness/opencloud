@@ -4,16 +4,17 @@ export const envStore = new AsyncLocalStorage();
 
 export function d1CompatFrom(d1) {
 	return {
-		prepare(sql) {
-			const stmt = d1.prepare(sql);
-			const wrapper = {
-				run: (...args) => stmt.bind(...args).run(),
-				get: async (...args) => (await stmt.bind(...args).first()) ?? undefined,
-				all: (...args) => stmt.bind(...args).all(),
-				_stmt: stmt,
-			};
-			return wrapper;
-		},
+	prepare(sql) {
+		const stmt = d1.prepare(sql);
+		const wrapper = {
+			run: (...args) => stmt.bind(...args).run(),
+			get: async (...args) => (await stmt.bind(...args).first()) ?? undefined,
+			all: (...args) => stmt.bind(...args).all(),
+			bind: (...args) => stmt.bind(...args),
+			_stmt: stmt,
+		};
+		return wrapper;
+	},
 		exec: (sql) => d1.exec(sql),
 		transaction: async (fn) => {
 			const ops = [];
