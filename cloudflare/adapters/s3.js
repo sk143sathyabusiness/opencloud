@@ -165,13 +165,14 @@ export class S3Adapter extends BaseAdapter {
   async listAllObjects() {
     const credentials = this.readCredentials();
     const bucket = credentials.bucket;
+    const endpoint = this.getEndpoint();
     const objects = [];
     let continuationToken;
 
     do {
       const params = new URLSearchParams({ 'list-type': '2' });
       if (continuationToken) params.set('continuation-token', continuationToken);
-      const url = `https://s3.${credentials.region || 'us-east-1'}.amazonaws.com/${bucket}?${params}`;
+      const url = `${endpoint}/${bucket}?${params}`;
 
       const headers = {};
       const signedHeaders = await signV4('GET', url, headers, '', credentials);

@@ -9,6 +9,74 @@ import { YandexAdapter } from '../adapters/yandex.js';
 import { S3Adapter } from '../adapters/s3.js';
 import { PCloudAdapter } from '../adapters/pcloud.js';
 
+// Minimal DOMParser polyfill for Node.js (used by S3Adapter.listAllObjects)
+if (typeof globalThis.DOMParser === 'undefined') {
+  class SimpleElement {
+    constructor(tagName, textContent) {
+      this.tagName = tagName;
+      this.textContent = textContent;
+      this.children = [];
+    }
+    querySelector(sel) {
+      for (const c of this.children) {
+        if (c.tagName === sel) return c;
+        const found = c.querySelector(sel);
+        if (found) return found;
+      }
+      return null;
+    }
+    querySelectorAll(sel) {
+      const results = [];
+      for (const c of this.children) {
+        if (c.tagName === sel) results.push(c);
+        results.push(...c.querySelectorAll(sel));
+      }
+      return results;
+    }
+  }
+
+  function parseXmlNode(xml) {
+    const root = new SimpleElement('root', '');
+    const tokenRe = /<(\/?)(\w+)>/g;
+    let token;
+    const parentStack = [root];
+    while ((token = tokenRe.exec(xml)) !== null) {
+      const isClose = token[1] === '/';
+      const tagName = token[2];
+      if (!isClose) {
+        const child = new SimpleElement(tagName, '');
+        parentStack[parentStack.length - 1].children.push(child);
+        parentStack.push(child);
+      } else {
+        parentStack.pop();
+      }
+    }
+    // Set textContent for leaf elements
+    const leafRe = /<(\w+)>([^<]*)<\/\1>/g;
+    let lm;
+    while ((lm = leafRe.exec(xml)) !== null) {
+      const findEl = (el, tag, text) => {
+        for (const c of el.children) {
+          if (c.tagName === tag && c.textContent === '' && c.children.length === 0) {
+            c.textContent = text;
+            return true;
+          }
+          if (findEl(c, tag, text)) return true;
+        }
+        return false;
+      };
+      findEl(root, lm[1], lm[2].trim());
+    }
+    return root;
+  }
+
+  globalThis.DOMParser = class {
+    parseFromString(str, _type) {
+      return parseXmlNode(str);
+    }
+  };
+}
+
 const mockAccount = {
   id: 'acc-1',
   user_id: 'u1',
@@ -453,6 +521,221 @@ test('S3Adapter uploadChunked uses simple PUT for files <= 5MB', async () => {
     assert.equal(result.remoteFileId, 'small.txt');
     assert.ok(!fetchCalls.some((c) => c.url.includes('?uploads')));
     assert.ok(fetchCalls.some((c) => c.method === 'PUT'));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// S3 custom endpoint tests
+
+test('S3Adapter listAllObjects uses custom endpoint instead of hardcoded amazonaws.com', async () => {
+  const s3Account = {
+    ...mockAccount,
+    provider: 's3',
+    encrypted_credentials: encryptJson({
+      accessKeyId: 'AKIATEST',
+      secretAccessKey: 'secret123',
+      bucket: 'my-bucket',
+      region: 'us-east-1',
+      endpoint: 'https://minio.example.com',
+    }),
+  };
+
+  const adapter = new S3Adapter(s3Account, mockEnv);
+  patchReadCredentials(adapter, {
+    accessKeyId: 'AKIATEST',
+    secretAccessKey: 'secret123',
+    bucket: 'my-bucket',
+    region: 'us-east-1',
+    endpoint: 'https://minio.example.com',
+  });
+
+  let fetchedUrls = [];
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (url, opts = {}) => {
+    fetchedUrls.push(String(url));
+    return new Response(
+      '<ListBucketResult><Contents><Key>file.txt</Key><Size>100</Size><LastModified>2024-01-01T00:00:00Z</LastModified></Contents></ListBucketResult>',
+      { status: 200, headers: { 'Content-Type': 'application/xml' } },
+    );
+  };
+
+  try {
+    const objects = await adapter.listAllObjects();
+    assert.equal(objects.length, 1);
+    assert.equal(objects[0].Key, 'file.txt');
+    assert.ok(fetchedUrls.some((u) => u.startsWith('https://minio.example.com/my-bucket')), `Expected custom endpoint in URL, got: ${fetchedUrls[0]}`);
+    assert.ok(!fetchedUrls.some((u) => u.includes('amazonaws.com')), `Should not use amazonaws.com when custom endpoint is set`);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('S3Adapter listAllObjects uses path-style URL with custom endpoint and forcePathStyle', async () => {
+  const s3Account = {
+    ...mockAccount,
+    provider: 's3',
+    encrypted_credentials: encryptJson({
+      accessKeyId: 'AKIATEST',
+      secretAccessKey: 'secret123',
+      bucket: 'my-bucket',
+      region: 'us-east-1',
+      endpoint: 'https://minio.example.com',
+      forcePathStyle: true,
+    }),
+  };
+
+  const adapter = new S3Adapter(s3Account, mockEnv);
+  patchReadCredentials(adapter, {
+    accessKeyId: 'AKIATEST',
+    secretAccessKey: 'secret123',
+    bucket: 'my-bucket',
+    region: 'us-east-1',
+    endpoint: 'https://minio.example.com',
+    forcePathStyle: true,
+  });
+
+  let fetchedUrls = [];
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (url, opts = {}) => {
+    fetchedUrls.push(String(url));
+    return new Response(
+      '<ListBucketResult><Contents><Key>file.txt</Key><Size>100</Size><LastModified>2024-01-01T00:00:00Z</LastModified></Contents></ListBucketResult>',
+      { status: 200, headers: { 'Content-Type': 'application/xml' } },
+    );
+  };
+
+  try {
+    await adapter.listAllObjects();
+    assert.ok(fetchedUrls.some((u) => u === 'https://minio.example.com/my-bucket?list-type=2'), `Expected path-style URL with bucket in path, got: ${fetchedUrls[0]}`);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('S3Adapter fetchStructure uses custom endpoint', async () => {
+  const s3Account = {
+    ...mockAccount,
+    provider: 's3',
+    encrypted_credentials: encryptJson({
+      accessKeyId: 'AKIATEST',
+      secretAccessKey: 'secret123',
+      bucket: 'my-bucket',
+      region: 'us-east-1',
+      endpoint: 'https://custom-s3.example.com',
+    }),
+  };
+
+  const adapter = new S3Adapter(s3Account, mockEnv);
+  patchReadCredentials(adapter, {
+    accessKeyId: 'AKIATEST',
+    secretAccessKey: 'secret123',
+    bucket: 'my-bucket',
+    region: 'us-east-1',
+    endpoint: 'https://custom-s3.example.com',
+  });
+
+  let fetchedUrls = [];
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (url, opts = {}) => {
+    fetchedUrls.push(String(url));
+    return new Response(
+      '<ListBucketResult><Contents><Key>docs/report.pdf</Key><Size>2048</Size><LastModified>2024-06-01T12:00:00Z</LastModified></Contents></ListBucketResult>',
+      { status: 200, headers: { 'Content-Type': 'application/xml' } },
+    );
+  };
+
+  try {
+    const records = await adapter.fetchStructure();
+    assert.ok(records.length > 0);
+    assert.ok(fetchedUrls.some((u) => u.startsWith('https://custom-s3.example.com/my-bucket')), `Expected custom endpoint in URL, got: ${fetchedUrls[0]}`);
+    assert.ok(!fetchedUrls.some((u) => u.includes('amazonaws.com')), 'Should not use hardcoded amazonaws.com');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('S3Adapter getStorageSummary uses custom endpoint', async () => {
+  const s3Account = {
+    ...mockAccount,
+    provider: 's3',
+    encrypted_credentials: encryptJson({
+      accessKeyId: 'AKIATEST',
+      secretAccessKey: 'secret123',
+      bucket: 'my-bucket',
+      region: 'us-east-1',
+      endpoint: 'https://custom-s3.example.com',
+    }),
+  };
+
+  const adapter = new S3Adapter(s3Account, mockEnv);
+  patchReadCredentials(adapter, {
+    accessKeyId: 'AKIATEST',
+    secretAccessKey: 'secret123',
+    bucket: 'my-bucket',
+    region: 'us-east-1',
+    endpoint: 'https://custom-s3.example.com',
+  });
+
+  let fetchedUrls = [];
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (url, opts = {}) => {
+    fetchedUrls.push(String(url));
+    return new Response(
+      '<ListBucketResult><Contents><Key>file1.txt</Key><Size>500</Size><LastModified>2024-01-01T00:00:00Z</LastModified></Contents><Contents><Key>file2.txt</Key><Size>300</Size><LastModified>2024-01-01T00:00:00Z</LastModified></Contents></ListBucketResult>',
+      { status: 200, headers: { 'Content-Type': 'application/xml' } },
+    );
+  };
+
+  try {
+    const summary = await adapter.getStorageSummary();
+    assert.equal(summary.usedSpace, 800);
+    assert.equal(summary.totalSpace, 1000000);
+    assert.ok(fetchedUrls.some((u) => u.startsWith('https://custom-s3.example.com/my-bucket')), `Expected custom endpoint in URL, got: ${fetchedUrls[0]}`);
+    assert.ok(!fetchedUrls.some((u) => u.includes('amazonaws.com')), 'Should not use hardcoded amazonaws.com');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('S3Adapter listAllObjects uses default amazonaws.com when no custom endpoint', async () => {
+  const s3Account = {
+    ...mockAccount,
+    provider: 's3',
+    encrypted_credentials: encryptJson({
+      accessKeyId: 'AKIATEST',
+      secretAccessKey: 'secret123',
+      bucket: 'my-bucket',
+      region: 'eu-west-1',
+    }),
+  };
+
+  const adapter = new S3Adapter(s3Account, mockEnv);
+  patchReadCredentials(adapter, {
+    accessKeyId: 'AKIATEST',
+    secretAccessKey: 'secret123',
+    bucket: 'my-bucket',
+    region: 'eu-west-1',
+  });
+
+  let fetchedUrls = [];
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (url, opts = {}) => {
+    fetchedUrls.push(String(url));
+    return new Response(
+      '<ListBucketResult></ListBucketResult>',
+      { status: 200, headers: { 'Content-Type': 'application/xml' } },
+    );
+  };
+
+  try {
+    await adapter.listAllObjects();
+    assert.ok(fetchedUrls.some((u) => u.startsWith('https://s3.eu-west-1.amazonaws.com/my-bucket')), `Expected default S3 endpoint, got: ${fetchedUrls[0]}`);
   } finally {
     globalThis.fetch = originalFetch;
   }
