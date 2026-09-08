@@ -48,11 +48,11 @@ function makeApp() {
 
 const AUTH_USER = { id: 'local-default-user', email: 'local@omnicloud.local', is_local: true };
 
-async function insertTestAccount(db, userId) {
+async function insertTestAccount(db, userId, provider = 'google_drive') {
   const accountId = randomUUID();
   await db.prepare(
     'INSERT INTO cloud_accounts (id, user_id, email, provider, encrypted_credentials, total_space, used_space, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(accountId, userId, 'test@test.com', 'google_drive', '{}', 10000, 0, 'active');
+  ).run(accountId, userId, 'test@test.com', provider, '{}', 10000, 0, 'active');
   return accountId;
 }
 
@@ -1027,15 +1027,65 @@ test('POST /api/files/:id/copy returns 501 when adapter lacks copyFile', async (
   });
 });
 
-test('GET /api/files/:id/shared-children returns 501', async () => {
+test('GET /api/files/:id/shared-children returns 501 for unsupported provider', async () => {
   await seedEnv(async () => {
     const db = getDb();
     const accountId = await insertTestAccount(db, AUTH_USER.id);
     const fileId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'shared', is_folder: 1 });
 
+    class UnsupportedAdapter {
+      constructor(account) { this.account = account; }
+      async getDownloadStream() { return new ReadableStream({ start(c) { c.close(); } }); }
+    }
+
+    _setAdapterOverrides({ google_drive: UnsupportedAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request(`http://x/api/files/${fileId}/shared-children`), { user: AUTH_USER });
+      assert.equal(res.status, 501);
+    } finally {
+      _clearAdapterOverrides();
+    }
+  });
+});
+
+test('GET /api/files/:id/shared-children returns children from supported adapter', async () => {
+  await seedEnv(async () => {
+    const db = getDb();
+    const accountId = await insertTestAccount(db, AUTH_USER.id);
+    const fileId = await insertTestFile(db, AUTH_USER.id, accountId, { file_name: 'shared-folder', is_folder: 1, remote_file_id: 'shared-folder-remote-id' });
+
+    class SharedChildrenAdapter {
+      constructor(account) { this.account = account; }
+      async listSharedFolderChildren(folderRecord) {
+        return [
+          { file_name: 'child1.txt', is_folder: 0, size: 100, mime_type: 'text/plain', remote_file_id: 'child1', remote_parent_id: folderRecord.remote_file_id, createdTime: null, modifiedTime: null, owner_name: null, owner_email: null },
+          { file_name: 'child2.txt', is_folder: 0, size: 200, mime_type: 'text/plain', remote_file_id: 'child2', remote_parent_id: folderRecord.remote_file_id, createdTime: null, modifiedTime: null, owner_name: null, owner_email: null },
+        ];
+      }
+    }
+
+    _setAdapterOverrides({ google_drive: SharedChildrenAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request(`http://x/api/files/${fileId}/shared-children`), { user: AUTH_USER });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.ok(Array.isArray(body.data));
+      assert.equal(body.data.length, 2);
+      assert.equal(body.data[0].file_name, 'child1.txt');
+      assert.equal(body.data[1].file_name, 'child2.txt');
+    } finally {
+      _clearAdapterOverrides();
+    }
+  });
+});
+
+test('GET /api/files/:id/shared-children returns 404 for nonexistent file', async () => {
+  await seedEnv(async () => {
     const app = makeApp();
-    const res = await runExpress(app, new Request(`http://x/api/files/${fileId}/shared-children`), { user: AUTH_USER });
-    assert.equal(res.status, 501);
+    const res = await runExpress(app, new Request(`http://x/api/files/${randomUUID()}/shared-children`), { user: AUTH_USER });
+    assert.equal(res.status, 404);
   });
 });
 
@@ -1080,11 +1130,60 @@ test('POST /api/files/folders returns 400 without name', async () => {
 
 // --- GET /api/files?shared ---
 
-test('GET /api/files?shared=1 returns 501', async () => {
+test('GET /api/files?shared=1 returns shared items from supported adapters', async () => {
   await seedEnv(async () => {
-    const app = makeApp();
-    const res = await runExpress(app, new Request('http://x/api/files?shared=1'), { user: AUTH_USER });
-    assert.equal(res.status, 501);
+    const db = getDb();
+    const accountId = await insertTestAccount(db, AUTH_USER.id);
+
+    class SharedAdapter {
+      constructor(account) { this.account = account; }
+      async listSharedWithMe() {
+        return [
+          { file_name: 'shared-doc.txt', is_folder: 0, size: 512, mime_type: 'text/plain', remote_file_id: 'rs1', remote_parent_id: null, createdTime: '2024-01-01', modifiedTime: '2024-01-02', owner_name: 'Alice', owner_email: 'alice@example.com' },
+          { file_name: 'shared-folder', is_folder: 1, size: 0, mime_type: null, remote_file_id: 'rs2', remote_parent_id: null, createdTime: null, modifiedTime: null, owner_name: 'Bob', owner_email: 'bob@example.com' },
+        ];
+      }
+    }
+
+    _setAdapterOverrides({ google_drive: SharedAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request('http://x/api/files?shared=1'), { user: AUTH_USER });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.ok(Array.isArray(body.data));
+      assert.equal(body.data.length, 2);
+      assert.equal(body.data[0].file_name, 'shared-doc.txt');
+      assert.equal(body.data[0].provider, 'google_drive');
+      assert.equal(body.data[1].file_name, 'shared-folder');
+      assert.equal(body.data[1].is_folder, 1);
+    } finally {
+      _clearAdapterOverrides();
+    }
+  });
+});
+
+test('GET /api/files?shared=1 skips providers without listSharedWithMe', async () => {
+  await seedEnv(async () => {
+    const db = getDb();
+    const accountId = await insertTestAccount(db, AUTH_USER.id, 's3');
+
+    class NoSharedAdapter {
+      constructor(account) { this.account = account; }
+      async getDownloadStream() { return new ReadableStream({ start(c) { c.close(); } }); }
+    }
+
+    _setAdapterOverrides({ s3: NoSharedAdapter });
+    try {
+      const app = makeApp();
+      const res = await runExpress(app, new Request('http://x/api/files?shared=1'), { user: AUTH_USER });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.ok(Array.isArray(body.data));
+      assert.equal(body.data.length, 0);
+    } finally {
+      _clearAdapterOverrides();
+    }
   });
 });
 

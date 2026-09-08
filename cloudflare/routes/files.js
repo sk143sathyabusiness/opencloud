@@ -212,7 +212,34 @@ export function createFilesRouter() {
       }
 
       if (shared === '1') {
-        return res.status(501).json({ error: 'Shared files listing requires provider adapters' });
+        const { results: accounts } = await db.prepare(
+          "SELECT * FROM cloud_accounts WHERE user_id = ? AND status = 'active'"
+        ).all(userId);
+
+        const sharedFiles = [];
+        for (const account of accounts) {
+          let adapter;
+          try {
+            adapter = await getAdapterForAccount(account.id);
+          } catch {
+            continue;
+          }
+          if (!adapter || typeof adapter.listSharedWithMe !== 'function') continue;
+
+          try {
+            const items = await adapter.listSharedWithMe();
+            sharedFiles.push(...items.map((item) => ({
+              ...item,
+              provider: account.provider,
+              email: account.email,
+              cloud_account_id: account.id,
+            })));
+          } catch {
+            continue;
+          }
+        }
+
+        return res.json({ data: buildDisplayNames(sharedFiles) });
       }
 
       const virtualPath = normalizePath(path || '/');
@@ -764,7 +791,39 @@ export function createFilesRouter() {
   // GET /api/files/:id/shared-children — needs adapter
   router.get('/files/:id/shared-children', async (req, res, next) => {
     try {
-      return res.status(501).json({ error: 'Shared folder children requires provider adapters' });
+      const db = getDb();
+      const userId = req.user.id;
+      const fileId = req.params.id;
+
+      const { results } = await db.prepare(`
+        SELECT fm.*, ca.provider, ca.email
+        FROM file_metadata fm
+        INNER JOIN cloud_accounts ca ON ca.id = fm.cloud_account_id
+        WHERE fm.user_id = ? AND fm.id = ? AND ca.status = 'active'
+      `).all(userId, fileId);
+
+      if (!results.length) {
+        return res.status(404).json({ error: 'File not found' });
+      }
+
+      const file = results[0];
+
+      let adapter;
+      try {
+        adapter = await getAdapterForAccount(file.cloud_account_id);
+      } catch (e) {
+        return res.status(502).json({ error: 'Failed to initialize provider adapter' });
+      }
+      if (!adapter) {
+        return res.status(502).json({ error: 'Provider adapter not available' });
+      }
+
+      if (typeof adapter.listSharedFolderChildren !== 'function') {
+        return res.status(501).json({ error: 'Shared folder listing not supported by this provider' });
+      }
+
+      const children = await adapter.listSharedFolderChildren(file);
+      return res.json({ data: buildDisplayNames(children) });
     } catch (error) {
       next(error);
     }
