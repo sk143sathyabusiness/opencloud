@@ -1,5 +1,6 @@
 import { BaseAdapter } from './base.js';
 import { decryptJson } from '../../backend/src/utils/crypto.js';
+import { updateAccountCredentials } from './helpers.js';
 
 function normalizeVirtualPath(input = '/') {
   if (!input || input === '/') return '/';
@@ -61,6 +62,7 @@ export class PCloudAdapter extends BaseAdapter {
     super(account);
     this.env = env;
     this.session = null;
+    this._persistCredentials = (creds) => updateAccountCredentials(this.account.id, creds);
   }
 
   getCapabilities() {
@@ -94,6 +96,16 @@ export class PCloudAdapter extends BaseAdapter {
       password: credentials.password,
     });
     this.session = { host: login.host, auth: login.auth };
+    try {
+      await this._persistCredentials({
+        ...credentials,
+        auth: login.auth,
+        host: login.host,
+        expires: Date.now() + 14 * 24 * 3600_000,
+      });
+    } catch (e) {
+      console.error('Failed to persist pCloud credentials:', e.message);
+    }
     return this.session;
   }
 

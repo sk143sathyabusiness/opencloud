@@ -826,3 +826,182 @@ test('GoogleDriveAdapter moveFile calls PATCH with addParents/removeParents', as
     globalThis.fetch = originalFetch;
   }
 });
+
+// Credential persistence tests
+
+test('YandexAdapter getAccessToken(true) persists refreshed credentials to D1', async () => {
+  const yandexCreds = {
+    accessToken: 'old-access-token',
+    refreshToken: 'refresh-123',
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+  };
+
+  const yandexAccount = {
+    ...mockAccount,
+    provider: 'yandex',
+    encrypted_credentials: encryptJson(yandexCreds),
+  };
+
+  const adapter = new YandexAdapter(yandexAccount, mockEnv);
+
+  let persistedCreds = null;
+  adapter._persistCredentials = async (creds) => { persistedCreds = creds; };
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    if (String(url).includes('oauth.yandex.com/token')) {
+      return new Response(JSON.stringify({
+        access_token: 'new-access-token',
+        expires_in: 3600,
+        token_type: 'bearer',
+      }), { status: 200 });
+    }
+    return new Response('Not found', { status: 404 });
+  };
+
+  try {
+    const token = await adapter.getAccessToken(true);
+    assert.equal(token, 'new-access-token');
+    assert.ok(persistedCreds, '_persistCredentials should have been called');
+    assert.equal(persistedCreds.accessToken, 'new-access-token');
+    assert.equal(persistedCreds.refreshToken, 'refresh-123');
+    assert.equal(persistedCreds.clientId, 'client-id');
+    assert.equal(persistedCreds.clientSecret, 'client-secret');
+    assert.ok(persistedCreds.expires > Date.now());
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('YandexAdapter getAccessToken(true) skips persist when token unchanged', async () => {
+  const yandexCreds = {
+    accessToken: 'existing-token',
+    refreshToken: 'refresh-123',
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+  };
+
+  const yandexAccount = {
+    ...mockAccount,
+    provider: 'yandex',
+    encrypted_credentials: encryptJson(yandexCreds),
+  };
+
+  const adapter = new YandexAdapter(yandexAccount, mockEnv);
+
+  let persistCalled = false;
+  adapter._persistCredentials = async () => { persistCalled = true; };
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    if (String(url).includes('oauth.yandex.com/token')) {
+      return new Response(JSON.stringify({
+        access_token: 'existing-token',
+        expires_in: 3600,
+        token_type: 'bearer',
+      }), { status: 200 });
+    }
+    return new Response('Not found', { status: 404 });
+  };
+
+  try {
+    const token = await adapter.getAccessToken(true);
+    assert.equal(token, 'existing-token');
+    assert.equal(persistCalled, false, 'Should not persist when token is unchanged');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('PCloudAdapter call() persists new session after re-login on auth error', async () => {
+  const pcloudCreds = {
+    auth: 'old-auth-token',
+    host: 'old.api.pcloud.com',
+    username: 'user@example.com',
+    password: 'pass123',
+  };
+
+  const pcloudAccount = {
+    ...mockAccount,
+    provider: 'pcloud',
+    encrypted_credentials: encryptJson(pcloudCreds),
+  };
+
+  const adapter = new PCloudAdapter(pcloudAccount, mockEnv);
+
+  let persistedCreds = null;
+  adapter._persistCredentials = async (creds) => { persistedCreds = creds; };
+
+  const originalFetch = globalThis.fetch;
+  let callCount = 0;
+  globalThis.fetch = async (url, opts) => {
+    const u = String(url);
+
+    if (u.includes('api.pcloud.com/login') || u.includes('login')) {
+      return new Response(JSON.stringify({
+        result: 0,
+        auth: 'new-auth-token',
+        hosts: ['new.api.pcloud.com'],
+      }), { status: 200 });
+    }
+
+    callCount++;
+    if (callCount === 1) {
+      return new Response(JSON.stringify({ result: 2000, error: 'Session expired' }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ result: 0, metadata: { path: '/' } }), { status: 200 });
+  };
+
+  try {
+    await adapter.call('userinfo');
+    assert.ok(persistedCreds, '_persistCredentials should have been called');
+    assert.equal(persistedCreds.auth, 'new-auth-token');
+    assert.equal(persistedCreds.host, 'new.api.pcloud.com');
+    assert.equal(persistedCreds.username, 'user@example.com');
+    assert.equal(persistedCreds.password, 'pass123');
+    assert.ok(persistedCreds.expires > Date.now());
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Credential persistence failure does not break the API call', async () => {
+  const yandexCreds = {
+    accessToken: 'old-token',
+    refreshToken: 'refresh-123',
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+  };
+
+  const yandexAccount = {
+    ...mockAccount,
+    provider: 'yandex',
+    encrypted_credentials: encryptJson(yandexCreds),
+  };
+
+  const adapter = new YandexAdapter(yandexAccount, mockEnv);
+
+  adapter._persistCredentials = async () => {
+    throw new Error('D1 write failed');
+  };
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    if (String(url).includes('oauth.yandex.com/token')) {
+      return new Response(JSON.stringify({
+        access_token: 'new-token',
+        expires_in: 3600,
+        token_type: 'bearer',
+      }), { status: 200 });
+    }
+    return new Response('Not found', { status: 404 });
+  };
+
+  try {
+    const token = await adapter.getAccessToken(true);
+    assert.equal(token, 'new-token', 'Adapter should still return the new token despite persistence failure');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

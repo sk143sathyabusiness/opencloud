@@ -1,5 +1,6 @@
 import { BaseAdapter } from './base.js';
 import { decryptJson } from '../../backend/src/utils/crypto.js';
+import { updateAccountCredentials } from './helpers.js';
 
 const API_BASE = 'https://cloud-api.yandex.net/v1/disk';
 
@@ -27,6 +28,7 @@ export class YandexAdapter extends BaseAdapter {
     super(account);
     this.env = env;
     this.tokenCache = null;
+    this._persistCredentials = (creds) => updateAccountCredentials(this.account.id, creds);
   }
 
   getCapabilities() {
@@ -78,6 +80,18 @@ export class YandexAdapter extends BaseAdapter {
       token: payload.access_token,
       expiresAt: Date.now() + Number(payload.expires_in || 3600) * 1000,
     };
+
+    if (forceRefresh && payload.access_token !== credentials.accessToken) {
+      try {
+        await this._persistCredentials({
+          ...credentials,
+          accessToken: payload.access_token,
+          expires: this.tokenCache.expiresAt,
+        });
+      } catch (e) {
+        console.error('Failed to persist Yandex credentials:', e.message);
+      }
+    }
 
     return this.tokenCache.token;
   }
