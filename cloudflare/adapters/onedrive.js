@@ -11,6 +11,24 @@ function encodePathSegment(value) {
   return encodeURIComponent(String(value)).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
+async function readStreamBytes(stream) {
+  const reader = stream.getReader();
+  const parts = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value);
+  }
+  const total = parts.reduce((s, p) => s + p.byteLength, 0);
+  const result = new Uint8Array(total);
+  let off = 0;
+  for (const p of parts) {
+    result.set(p, off);
+    off += p.byteLength;
+  }
+  return result;
+}
+
 export class OneDriveAdapter extends BaseAdapter {
   constructor(account, env) {
     super(account);
@@ -254,6 +272,104 @@ export class OneDriveAdapter extends BaseAdapter {
       remoteFileId: payload.id,
       remoteParentId: payload.parentReference?.id || parentId,
       size: Number(payload.size || size || 0),
+      fileName: payload.name || fileName,
+      mimeType: payload.file?.mimeType || mimeType,
+    };
+  }
+
+  async uploadChunked({ chunks, fileName, mimeType, virtualPath, remoteParentId, totalSize }) {
+    if (totalSize <= 4 * 1024 * 1024) {
+      return this._uploadChunkedFallback({ chunks, fileName, mimeType, virtualPath, remoteParentId, totalSize });
+    }
+
+    const parentId = remoteParentId || await this.ensureRemotePath(virtualPath);
+    const uploadPath = `/me/drive/items/${encodeURIComponent(parentId)}:/${encodePathSegment(fileName)}:/createUploadSession`;
+
+    const sessionPayload = await this.graph(uploadPath, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        item: { '@microsoft.graph.conflictBehavior': 'rename', name: fileName },
+      }),
+    });
+
+    const sessionUrl = sessionPayload.uploadUrl;
+    if (!sessionUrl) throw new Error('OneDrive did not return an upload session URL');
+
+    let offset = 0;
+    for await (const chunk of chunks) {
+      const chunkBytes = await readStreamBytes(chunk.body);
+      const end = offset + chunkBytes.byteLength - 1;
+
+      const response = await fetch(sessionUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Range': `bytes ${offset}-${end}/${totalSize}`,
+          'Content-Length': String(chunkBytes.byteLength),
+        },
+        body: chunkBytes,
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error?.message || 'OneDrive upload chunk failed');
+      }
+
+      offset += chunkBytes.byteLength;
+    }
+
+    await fetch(sessionUrl, { method: 'DELETE' }).catch(() => {});
+
+    return {
+      remoteFileId: sessionPayload.id || null,
+      remoteParentId: sessionPayload.parentReference?.id || parentId,
+      size: Number(sessionPayload.size || totalSize),
+      fileName: sessionPayload.name || fileName,
+      mimeType: sessionPayload.file?.mimeType || mimeType,
+    };
+  }
+
+  async _uploadChunkedFallback({ chunks, fileName, mimeType, virtualPath, remoteParentId, totalSize }) {
+    const parentId = remoteParentId || await this.ensureRemotePath(virtualPath);
+    const uploadPath = `/me/drive/items/${encodeURIComponent(parentId)}:/${encodePathSegment(fileName)}:/content`;
+
+    const allChunks = [];
+    for await (const chunk of chunks) {
+      allChunks.push(chunk);
+    }
+
+    let combined;
+    if (allChunks.length === 1) {
+      combined = allChunks[0].body;
+    } else {
+      const parts = [];
+      for (const chunk of allChunks) {
+        const reader = chunk.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          parts.push(value);
+        }
+      }
+      combined = new Response(new Blob(parts)).body;
+    }
+
+    const response = await this.requestGraph(`https://graph.microsoft.com/v1.0${uploadPath}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': mimeType || 'application/octet-stream',
+        ...(totalSize ? { 'Content-Length': String(totalSize) } : {}),
+      },
+      body: combined,
+    });
+
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error?.message || 'Failed to upload to OneDrive');
+
+    return {
+      remoteFileId: payload.id,
+      remoteParentId: payload.parentReference?.id || parentId,
+      size: Number(payload.size || totalSize),
       fileName: payload.name || fileName,
       mimeType: payload.file?.mimeType || mimeType,
     };

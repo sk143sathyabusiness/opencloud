@@ -314,6 +314,148 @@ export class GoogleDriveAdapter extends BaseAdapter {
     };
   }
 
+  async uploadChunked({ chunks, fileName, mimeType, virtualPath, remoteParentId, totalSize }) {
+    if (totalSize <= 5 * 1024 * 1024) {
+      return this._uploadChunkedFallback({ chunks, fileName, mimeType, virtualPath, remoteParentId, totalSize });
+    }
+
+    const parentId = remoteParentId || await this.ensureRemotePath(virtualPath);
+    const token = await this.getAccessToken();
+    const metadata = { name: fileName, parents: parentId ? [parentId] : undefined };
+
+    const sessionRes = await fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,parents,size,mimeType,name',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'X-Upload-Content-Type': mimeType || 'application/octet-stream',
+          'X-Upload-Content-Length': String(totalSize),
+        },
+        body: JSON.stringify(metadata),
+      },
+    );
+
+    if (!sessionRes.ok) {
+      const err = await sessionRes.json().catch(() => ({}));
+      throw new Error(err.error?.message || 'Failed to start Google resumable upload session');
+    }
+
+    const sessionUri = sessionRes.headers.get('Location');
+    if (!sessionUri) throw new Error('Google resumable upload did not return a session URI');
+
+    let offset = 0;
+    for await (const chunk of chunks) {
+      const chunkBytes = await this._readStreamBytes(chunk.body);
+      const end = offset + chunkBytes.byteLength - 1;
+
+      const putRes = await fetch(sessionUri, {
+        method: 'PUT',
+        headers: {
+          'Content-Length': String(chunkBytes.byteLength),
+          'Content-Range': `bytes ${offset}-${end}/${totalSize}`,
+        },
+        body: chunkBytes,
+      });
+
+      if (!putRes.ok && putRes.status !== 308) {
+        const err = await putRes.json().catch(() => ({}));
+        throw new Error(err.error?.message || 'Google resumable upload chunk failed');
+      }
+
+      offset += chunkBytes.byteLength;
+    }
+
+    const finalRes = await fetch(
+      `/upload/drive/v3/files?uploadType=resumable&fields=id,parents,size,mimeType,name`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Length': '0',
+          'Content-Range': `bytes */${totalSize}`,
+        },
+      },
+    );
+
+    if (!finalRes.ok) {
+      const err = await finalRes.json().catch(() => ({}));
+      throw new Error(err.error?.message || 'Failed to finalize Google resumable upload');
+    }
+
+    const data = await finalRes.json();
+    return {
+      remoteFileId: data.id,
+      remoteParentId: data.parents?.[0] || parentId || null,
+      size: Number(data.size || totalSize),
+      fileName: data.name || fileName,
+      mimeType: data.mimeType || mimeType,
+    };
+  }
+
+  async _uploadChunkedFallback({ chunks, fileName, mimeType, virtualPath, remoteParentId, totalSize }) {
+    const parentId = remoteParentId || await this.ensureRemotePath(virtualPath);
+    const metadata = { name: fileName };
+    if (parentId) metadata.parents = [parentId];
+
+    const allChunks = [];
+    for await (const chunk of chunks) {
+      allChunks.push(chunk);
+    }
+
+    const parts = [];
+    for (const chunk of allChunks) {
+      const reader = chunk.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        parts.push(value);
+      }
+    }
+    const blob = new Blob(parts, { type: mimeType || 'application/octet-stream' });
+
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+    form.append('file', blob, fileName);
+
+    const response = await this.request('/upload/drive/v3/files?uploadType=multipart&fields=id,parents,size,mimeType,name', {
+      method: 'POST',
+      body: form,
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error?.message || 'Failed to upload to Google Drive');
+    }
+
+    return {
+      remoteFileId: data.id,
+      remoteParentId: data.parents?.[0] || parentId || null,
+      size: Number(data.size || totalSize),
+      fileName: data.name || fileName,
+      mimeType: data.mimeType || mimeType,
+    };
+  }
+
+  async _readStreamBytes(stream) {
+    const reader = stream.getReader();
+    const parts = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value);
+    }
+    const total = parts.reduce((s, p) => s + p.byteLength, 0);
+    const result = new Uint8Array(total);
+    let off = 0;
+    for (const p of parts) {
+      result.set(p, off);
+      off += p.byteLength;
+    }
+    return result;
+  }
+
   async getDownloadStream(fileRecord) {
     const response = await this.request(
       `/files/${encodeURIComponent(fileRecord.remote_file_id)}?alt=media`,

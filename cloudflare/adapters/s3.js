@@ -55,6 +55,24 @@ async function sha256Hex(data) {
   return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+async function s3ReadStreamBytes(stream) {
+  const reader = stream.getReader();
+  const parts = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value);
+  }
+  const total = parts.reduce((s, p) => s + p.byteLength, 0);
+  const result = new Uint8Array(total);
+  let off = 0;
+  for (const p of parts) {
+    result.set(p, off);
+    off += p.byteLength;
+  }
+  return result;
+}
+
 async function hmacSha256(key, data) {
   const encoder = new TextEncoder();
   const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -285,6 +303,157 @@ export class S3Adapter extends BaseAdapter {
       remoteFileId: key,
       remoteParentId: normalizeVirtualPath(virtualPath),
       size: Number(size || 0),
+      fileName,
+      mimeType,
+    };
+  }
+
+  async uploadChunked({ chunks, fileName, mimeType, virtualPath, remoteParentId, totalSize }) {
+    if (totalSize <= 5 * 1024 * 1024) {
+      return this._uploadChunkedFallback({ chunks, fileName, mimeType, virtualPath, remoteParentId, totalSize });
+    }
+
+    const credentials = this.readCredentials();
+    const bucket = credentials.bucket;
+    const key = toKey(virtualPath, fileName);
+    const endpoint = this.getEndpoint();
+    const contentType = mimeType || 'application/octet-stream';
+
+    const createUrl = `${endpoint}/${bucket}/${key}?uploads`;
+    const createHeaders = {
+      'Content-Type': contentType,
+    };
+    const signedCreate = await signV4('POST', createUrl, createHeaders, '', credentials);
+    const createRes = await fetch(createUrl, { method: 'POST', headers: signedCreate });
+
+    if (!createRes.ok) {
+      const err = await createRes.text();
+      throw new Error(`S3 CreateMultipartUpload failed: ${createRes.status} ${err}`);
+    }
+
+    const createXml = await createRes.text();
+    const uploadIdMatch = createXml.match(/<UploadId>(.*?)<\/UploadId>/);
+    if (!uploadIdMatch) throw new Error('S3 CreateMultipartUpload did not return UploadId');
+    const uploadId = uploadIdMatch[1];
+
+    const allChunks = [];
+    for await (const chunk of chunks) {
+      allChunks.push(chunk);
+    }
+
+    const partTags = [];
+    let partNumber = 1;
+
+    for (const chunk of allChunks) {
+      const chunkBytes = await s3ReadStreamBytes(chunk.body);
+      const partUrl = `${endpoint}/${bucket}/${key}?partNumber=${partNumber}&uploadId=${uploadId}`;
+
+      const signedPart = await signV4('PUT', partUrl, {
+        'Content-Type': contentType,
+        'Content-Length': String(chunkBytes.byteLength),
+      }, '', credentials);
+
+      const partRes = await fetch(partUrl, {
+        method: 'PUT',
+        headers: {
+          ...signedPart,
+          'Content-Length': String(chunkBytes.byteLength),
+        },
+        body: chunkBytes,
+      });
+
+      if (!partRes.ok) {
+        const err = await partRes.text();
+        throw new Error(`S3 UploadPart ${partNumber} failed: ${partRes.status} ${err}`);
+      }
+
+      const etag = partRes.headers.get('ETag');
+      if (!etag) throw new Error(`S3 UploadPart ${partNumber} missing ETag`);
+
+      partTags.push({ PartNumber: partNumber, ETag: etag });
+      partNumber++;
+    }
+
+    const completeXml = [
+      '<CompleteMultipartUpload>',
+      ...partTags.map((p) => `<Part><PartNumber>${p.PartNumber}</PartNumber><ETag>${p.ETag}</ETag></Part>`),
+      '</CompleteMultipartUpload>',
+    ].join('');
+
+    const completeUrl = `${endpoint}/${bucket}/${key}?uploadId=${uploadId}`;
+    const signedComplete = await signV4('POST', completeUrl, {
+      'Content-Type': 'application/xml',
+    }, completeXml, credentials);
+
+    const completeRes = await fetch(completeUrl, {
+      method: 'POST',
+      headers: {
+        ...signedComplete,
+        'Content-Type': 'application/xml',
+      },
+      body: completeXml,
+    });
+
+    if (!completeRes.ok) {
+      const err = await completeRes.text();
+      throw new Error(`S3 CompleteMultipartUpload failed: ${completeRes.status} ${err}`);
+    }
+
+    return {
+      remoteFileId: key,
+      remoteParentId: normalizeVirtualPath(virtualPath),
+      size: Number(totalSize || 0),
+      fileName,
+      mimeType,
+    };
+  }
+
+  async _uploadChunkedFallback({ chunks, fileName, mimeType, virtualPath, remoteParentId, totalSize }) {
+    const credentials = this.readCredentials();
+    const key = toKey(virtualPath, fileName);
+    const bucket = credentials.bucket;
+    const endpoint = this.getEndpoint();
+    const url = `${endpoint}/${bucket}/${key}`;
+
+    const allChunks = [];
+    for await (const chunk of chunks) {
+      allChunks.push(chunk);
+    }
+
+    let combined;
+    if (allChunks.length === 1) {
+      combined = allChunks[0].body;
+    } else {
+      const parts = [];
+      for (const chunk of allChunks) {
+        const reader = chunk.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          parts.push(value);
+        }
+      }
+      combined = new Response(new Blob(parts)).body;
+    }
+
+    const signedHeaders = await signV4('PUT', url, {
+      'content-type': mimeType || 'application/octet-stream',
+    }, '', credentials);
+
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: signedHeaders,
+      body: combined,
+    });
+
+    if (!response.ok) {
+      throw new Error(`S3 upload failed: ${response.status}`);
+    }
+
+    return {
+      remoteFileId: key,
+      remoteParentId: normalizeVirtualPath(virtualPath),
+      size: Number(totalSize || 0),
       fileName,
       mimeType,
     };

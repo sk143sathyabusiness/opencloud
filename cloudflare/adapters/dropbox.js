@@ -26,6 +26,24 @@ function parseDropboxError(payload, fallback) {
   return payload.error_summary || payload.error?.['.tag'] || payload.message || fallback;
 }
 
+async function dropboxReadStreamBytes(stream) {
+  const reader = stream.getReader();
+  const parts = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value);
+  }
+  const total = parts.reduce((s, p) => s + p.byteLength, 0);
+  const result = new Uint8Array(total);
+  let off = 0;
+  for (const p of parts) {
+    result.set(p, off);
+    off += p.byteLength;
+  }
+  return result;
+}
+
 export class DropboxAdapter extends BaseAdapter {
   constructor(account, env) {
     super(account);
@@ -215,6 +233,146 @@ export class DropboxAdapter extends BaseAdapter {
       remoteFileId: payload.id || payload.path_lower,
       remoteParentId: parentPath || '/',
       size: Number(payload.size || size || 0),
+      fileName: payload.name || fileName,
+      mimeType,
+    };
+  }
+
+  async uploadChunked({ chunks, fileName, mimeType, virtualPath, remoteParentId, totalSize }) {
+    if (totalSize <= 150 * 1024 * 1024) {
+      return this._uploadChunkedFallback({ chunks, fileName, mimeType, virtualPath, remoteParentId, totalSize });
+    }
+
+    const parentPath = await this.ensureRemotePath(virtualPath);
+    const targetPath = joinDropboxPath(parentPath || '/', fileName);
+
+    const allChunks = [];
+    for await (const chunk of chunks) {
+      allChunks.push(chunk);
+    }
+
+    let sessionId = null;
+    let offset = 0;
+
+    for (let i = 0; i < allChunks.length; i++) {
+      const chunkBytes = await dropboxReadStreamBytes(allChunks[i].body);
+
+      if (i === 0) {
+        const startRes = await this.requestWithReauth(async (accessToken) => {
+          return fetch('https://content.dropboxapi.com/2/files/upload_session/start', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/octet-stream',
+              'Dropbox-API-Arg': JSON.stringify({ close: false }),
+            },
+            body: chunkBytes,
+          });
+        });
+
+        if (!startRes.ok) {
+          const err = await startRes.json().catch(() => null);
+          throw new Error(parseDropboxError(err, 'Failed to start Dropbox upload session'));
+        }
+
+        const startPayload = await startRes.json();
+        sessionId = startPayload.session_id;
+        offset = chunkBytes.byteLength;
+      } else {
+        const appendRes = await this.requestWithReauth(async (accessToken) => {
+          return fetch('https://content.dropboxapi.com/2/files/upload_session/append_v2', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/octet-stream',
+              'Dropbox-API-Arg': JSON.stringify({
+                cursor: { session_id: sessionId, offset },
+                close: false,
+              }),
+            },
+            body: chunkBytes,
+          });
+        });
+
+        if (!appendRes.ok) {
+          const err = await appendRes.json().catch(() => null);
+          throw new Error(parseDropboxError(err, 'Failed to append to Dropbox upload session'));
+        }
+
+        offset += chunkBytes.byteLength;
+      }
+    }
+
+    const finishRes = await this.requestWithReauth(async (accessToken) => {
+      return fetch('https://content.dropboxapi.com/2/files/upload_session/finish', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/octet-stream',
+          'Dropbox-API-Arg': JSON.stringify({
+            cursor: { session_id: sessionId, offset },
+            commit: { path: targetPath, mode: 'add', autorename: true, mute: false, strict_conflict: false },
+          }),
+        },
+        body: new Uint8Array(0),
+      });
+    });
+
+    if (!finishRes.ok) {
+      const err = await finishRes.json().catch(() => null);
+      throw new Error(parseDropboxError(err, 'Failed to finish Dropbox upload session'));
+    }
+
+    const payload = await finishRes.json();
+    return {
+      remoteFileId: payload.id || payload.path_lower,
+      remoteParentId: parentPath || '/',
+      size: Number(payload.size || totalSize),
+      fileName: payload.name || fileName,
+      mimeType,
+    };
+  }
+
+  async _uploadChunkedFallback({ chunks, fileName, mimeType, virtualPath, remoteParentId, totalSize }) {
+    const parentPath = await this.ensureRemotePath(virtualPath);
+    const targetPath = joinDropboxPath(parentPath || '/', fileName);
+
+    const allChunks = [];
+    for await (const chunk of chunks) {
+      allChunks.push(chunk);
+    }
+
+    let combined;
+    if (allChunks.length === 1) {
+      combined = allChunks[0].body;
+    } else {
+      const parts = [];
+      for (const chunk of allChunks) {
+        const reader = chunk.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          parts.push(value);
+        }
+      }
+      combined = new Response(new Blob(parts)).body;
+    }
+
+    const response = await this.content('/files/upload', {
+      args: { path: targetPath, mode: 'add', autorename: true, mute: false, strict_conflict: false },
+      body: combined,
+      contentType: 'application/octet-stream',
+    });
+
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(parseDropboxError(payload, 'Failed to upload file to Dropbox'));
+    }
+
+    return {
+      remoteFileId: payload.id || payload.path_lower,
+      remoteParentId: parentPath || '/',
+      size: Number(payload.size || totalSize),
       fileName: payload.name || fileName,
       mimeType,
     };

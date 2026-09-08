@@ -5,6 +5,23 @@ import { requireAppUser } from '../middleware.js';
 import { kvSet, kvGet, kvDelete } from '../kvStore.js';
 import { putStagedChunk, getStagedChunks, deleteStaged } from '../staging.js';
 
+const adapterModules = {
+  'google-drive': () => import('../adapters/google.js'),
+  'onedrive': () => import('../adapters/onedrive.js'),
+  'dropbox': () => import('../adapters/dropbox.js'),
+  's3': () => import('../adapters/s3.js'),
+  'yandex': () => import('../adapters/yandex.js'),
+  'pcloud': () => import('../adapters/pcloud.js'),
+};
+
+async function loadAdapter(account, env) {
+  const loader = adapterModules[account.provider];
+  if (!loader) throw new Error(`Unknown provider: ${account.provider}`);
+  const mod = await loader();
+  const AdapterClass = Object.values(mod)[0];
+  return new AdapterClass(account, env);
+}
+
 function getState() {
   const store = envStore.getStore();
   return store?.STATE || null;
@@ -275,6 +292,30 @@ export function createUploadsRouter() {
         });
       }
 
+      let providerResult = null;
+      try {
+        const { results: accounts } = await db.prepare(
+          "SELECT * FROM cloud_accounts WHERE id = ? AND status = 'active'"
+        ).all(session.cloud_account_id);
+
+        if (accounts.length) {
+          const adapter = await loadAdapter(accounts[0], env);
+          const chunks = (async function* () {
+            yield { index: 0, body: new Response(assembled).body };
+          })();
+          providerResult = await adapter.uploadChunked({
+            chunks,
+            fileName: session.file_name,
+            mimeType: session.mime_type,
+            virtualPath: session.virtual_path,
+            remoteParentId: session.remote_parent_id,
+            totalSize: assembled.byteLength,
+          });
+        }
+      } catch (providerError) {
+        providerResult = { error: providerError.message };
+      }
+
       await db.prepare(
         "UPDATE upload_sessions SET status = 'completed', updated_at = ? WHERE id = ?"
       ).run(now, upload_id);
@@ -287,6 +328,7 @@ export function createUploadsRouter() {
         data: {
           upload_id, status: 'completed',
           bytes_assembled: assembled.byteLength, chunk_count: chunkCount,
+          provider_result: providerResult,
         },
       });
     } catch (error) {
@@ -514,6 +556,30 @@ export function createUploadsRouter() {
         });
       }
 
+      let providerResult = null;
+      try {
+        const { results: accounts } = await db.prepare(
+          "SELECT * FROM cloud_accounts WHERE id = ? AND status = 'active'"
+        ).all(session.cloud_account_id);
+
+        if (accounts.length) {
+          const adapter = await loadAdapter(accounts[0], env);
+          const chunks = (async function* () {
+            yield { index: 0, body: new Response(assembled).body };
+          })();
+          providerResult = await adapter.uploadChunked({
+            chunks,
+            fileName: session.file_name,
+            mimeType: session.mime_type,
+            virtualPath: session.virtual_path,
+            remoteParentId: session.remote_parent_id,
+            totalSize: assembled.byteLength,
+          });
+        }
+      } catch (providerError) {
+        providerResult = { error: providerError.message };
+      }
+
       await db.prepare(
         "UPDATE upload_sessions SET status = 'completed', updated_at = ? WHERE id = ?"
       ).run(now, upload_id);
@@ -526,6 +592,7 @@ export function createUploadsRouter() {
         data: {
           upload_id, status: 'completed',
           bytes_assembled: assembled.byteLength, chunk_count: chunkCount,
+          provider_result: providerResult,
         },
       });
     } catch (error) {

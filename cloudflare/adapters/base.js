@@ -37,4 +37,36 @@ export class BaseAdapter {
   async setFileStarred(id, starred) {
     throw new Error('setFileStarred() must be implemented by subclass');
   }
+
+  async uploadChunked({ chunks, fileName, mimeType, virtualPath, remoteParentId, totalSize }) {
+    const collectedChunks = [];
+    for await (const chunk of chunks) {
+      collectedChunks.push(chunk);
+    }
+
+    if (collectedChunks.length === 0) {
+      throw new Error('No chunks provided');
+    }
+
+    const assembled = new Uint8Array(totalSize);
+    let offset = 0;
+    for (const chunk of collectedChunks) {
+      const reader = chunk.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        assembled.set(value, offset);
+        offset += value.byteLength;
+      }
+    }
+
+    return this.uploadStream({
+      stream: new Response(assembled).body,
+      size: totalSize,
+      fileName,
+      mimeType,
+      virtualPath,
+      remoteParentId,
+    });
+  }
 }
